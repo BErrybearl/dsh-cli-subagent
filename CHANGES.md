@@ -1,5 +1,19 @@
 # 本分支的改动
 
+## 1.1.15（未发布）
+
+- 修正 dock 位置：从页面级浮层 `shell.overlay` 换到 `conversation.input.dock`（输入框卡片正上方、全宽），
+  不再贴住页面顶端。
+- 修正会话串号：dock / Tab 直接使用槽位提供的 `sessionId` 过滤 `parentId`；拿不到 sessionId 时
+  「本会话」范围显示空，不再退化成「全部会话」。
+- 修正重启后假弹出：`resumePersistedRuns` 接管的旧记录标记 `restored`，dock 不把它们当作「刚完成」
+  显示；自动收起只作用于真实新结束的运行。
+- dock 增加 ✕ 隐藏（记住时间点，有新运行再出现）；dock 默认收起为一行，有新运行自动展开。
+- 六个开关从浏览器 localStorage 迁到插件配置 `panel` 节点（`dock / tab / scope / autoHideSeconds /
+  maxCards / allowStop`），`cordis.patch.yml` 可见；设置界面通过 `qoder-subagent/panel` 写回配置并
+  即时生效，写回失败时退回本地覆盖并在界面提示。
+- 统计改为客户端按筛选后的运行集合计算，dock / Tab / 设置三处一致。
+
 ## 1.1.14（未发布）
 
 - 新增「子代理运行面板」：输入框上方浮层 dock（`shell.overlay`）+「子代理」标签页（`conversation.view`）
