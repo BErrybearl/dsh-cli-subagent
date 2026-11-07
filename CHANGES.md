@@ -1,5 +1,11 @@
 # 本分支的改动
 
+## 1.1.17（未发布）
+
+- 修复：`panel` 配置里外层对象误标 `volatile()`，导致 dsh 拒绝加载
+  （`$.panel.dock volatile fields require a fixed object path without an enclosing volatile field`）。
+  改为只有叶子字段 volatile，路径固定为 `panel.<key>`，热更新照旧。
+
 ## 1.1.16（未发布）
 
 - 新增开关 `panel.includeNative`（默认关）：把 dsh 自带的子代理（`subagent` / `subagent_fork` /
