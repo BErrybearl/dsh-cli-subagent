@@ -17,6 +17,7 @@ const DEFAULTS = {
 	allowStop: true,
 	includeNative: false,
 	hideWhenIdle: false,
+	showCost: false,
 };
 const HIDE_KEY = "dsh-subagent.panel.hideAt";
 const OVERRIDE_KEY = "dsh-subagent.panel.override";
@@ -170,24 +171,23 @@ function NativeProbe({ hooks, sessionId, scopeAll, onData }) {
 	return null;
 }
 
-function Card({ run, onStop, stopEnabled }) {
+function Card({ run, onStop, stopEnabled, showCost }) {
 	const [, col] = statusOf(run);
 	const running = run.status === "running";
 	const cost = typeof run.costUsd === "number" && run.costUsd > 0 ? `$${run.costUsd.toFixed(4)}` : "";
-	return h("div", { className: "sap-card" + (run.status === "error" ? " sap-err" : run.status === "completed" ? " sap-done" : "") },
+	// 单行精简卡片：任务文案收进 title 悬停显示。
+	return h("div", {
+		className: "sap-card" + (run.status === "error" ? " sap-err" : run.status === "completed" ? " sap-done" : ""),
+		title: run.label || run.prompt || "(任务)",
+	},
 		h("div", { className: "sap-row" },
 			h("span", { className: "sap-dot" + (run.stalled ? " sap-stall" : ""), style: { background: run.stalled ? "#d9a400" : col } }),
 			h("span", { className: "sap-agent" }, run.provider || "?"),
 			run.native ? h("span", { className: "sap-native", title: "dsh 自带的子代理，只读" }, "内置") : null,
 			h("span", { className: "sap-model" }, modelText(run)),
 			h("span", { className: "sap-time" }, running ? fmtDur(Date.now() - (run.startedAt || 0)) : fmtDur((run.endedAt || 0) - (run.startedAt || 0))),
+			showCost && cost ? h("span", { className: "sap-cost" }, cost) : null,
 			running && stopEnabled && !run.native ? h("button", { className: "sap-x", title: "停止该子代理", onClick: () => onStop(run.id) }, "停止") : null,
-		),
-		h("div", { className: "sap-sub" },
-			h("span", { className: "sap-task" }, run.label || run.prompt || "(任务)"),
-			run.stalled ? h("span", { className: "sap-stalltag" }, `静默 ${run.idleSeconds}s`) : null,
-			h("span", { className: "sap-act" }, lastAction(run)),
-			cost ? h("span", { className: "sap-cost" }, cost) : null,
 		),
 	);
 }
@@ -227,7 +227,7 @@ function Dock({ connection, sessionId, hooks }) {
 	else summary.push(h("span", { key: "i", className: "sap-mut" }, "空闲"));
 	if (stats.completed) summary.push(h("span", { key: "c", className: "sap-mut" }, `· ${stats.completed} 完成`));
 	if (stats.error) summary.push(h("span", { key: "e", className: "sap-errt" }, `· ${stats.error} 出错`));
-	if (stats.costUsd > 0) summary.push(h("span", { key: "$", className: "sap-mut" }, `· $${stats.costUsd.toFixed(4)}`));
+	if (cfg.showCost && stats.costUsd > 0) summary.push(h("span", { key: "$", className: "sap-mut" }, `· $${stats.costUsd.toFixed(4)}`));
 	return h(React.Fragment, null,
 		cfg.includeNative ? h(NativeProbe, { hooks, sessionId, scopeAll: cfg.scope === "all", onData: setNatives }) : null,
 		h("div", { className: "sap-dock" + (open && shown.length ? "" : " sap-fold") },
@@ -239,7 +239,7 @@ function Dock({ connection, sessionId, hooks }) {
 				h("span", { className: "sap-scope" }, cfg.scope === "session" ? "本会话" : "全部"),
 				h("button", { className: "sap-close", title: "隐藏这一行（新运行会再出现）", onClick: dismiss }, "✕"),
 			),
-			open && shown.length ? h("div", { className: "sap-cards" }, shown.map((run) => h(Card, { key: run.id, run, onStop, stopEnabled: cfg.allowStop }))) : null,
+			open && shown.length ? h("div", { className: "sap-cards" }, shown.map((run) => h(Card, { key: run.id, run, onStop, stopEnabled: cfg.allowStop, showCost: cfg.showCost }))) : null,
 		),
 	);
 }
@@ -266,7 +266,7 @@ function Tab({ connection, sessionId, hooks }) {
 			h("span", { className: "sap-stat" }, `运行 ${stats.running}`),
 			h("span", { className: "sap-stat" }, `完成 ${stats.completed}`),
 			h("span", { className: "sap-stat sap-errt" }, `出错 ${stats.error}`),
-			h("span", { className: "sap-stat" }, `成本 $${stats.costUsd.toFixed(4)}`),
+			cfg.showCost ? h("span", { className: "sap-stat" }, `成本 $${stats.costUsd.toFixed(4)}`) : null,
 			h("span", { className: "sap-scope" }, cfg.scope === "session" ? "本会话" : "全部会话"),
 		),
 		runs.length === 0
@@ -340,7 +340,7 @@ function Settings({ connection }) {
 			h("span", null, `运行 ${stats.running}`),
 			h("span", null, `完成 ${stats.completed}`),
 			h("span", null, `出错 ${stats.error}`),
-			h("span", null, `成本 $${stats.costUsd.toFixed(4)}`),
+			cfg.showCost ? h("span", null, `成本 $${stats.costUsd.toFixed(4)}`) : null,
 		),
 		group("入口", [
 			row("输入框上方 dock", "常驻一行显示统计", toggle("dock"), "dock"),
@@ -351,6 +351,7 @@ function Settings({ connection }) {
 			row("范围", "", seg("scope", [["session", "本会话"], ["all", "全部"]]), "scope"),
 			row("卡片上限", "", seg("maxCards", [["10", "10"], ["20", "20"], ["40", "40"]], Number), "maxCards"),
 			row("完成卡片收起", "", seg("autoHideSeconds", [["0", "不自动"], ["10", "10s"], ["30", "30s"], ["60", "60s"], ["300", "5m"]], Number), "autoHideSeconds"),
+			row("显示成本", "开启后才显示金额；数据来自 CLI 上报", toggle("showCost"), "showCost"),
 		]),
 		group("操作", [
 			row("停止按钮（kill 进程）", "", toggle("allowStop"), "allowStop"),
