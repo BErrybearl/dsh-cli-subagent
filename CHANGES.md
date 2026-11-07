@@ -1,5 +1,13 @@
 # 本分支的改动
 
+## 1.1.16（未发布）
+
+- 新增开关 `panel.includeNative`（默认关）：把 dsh 自带的子代理（`subagent` / `subagent_fork` /
+  Agent Team teammate）并入面板，带「内置」标、只读不可停止。
+- 数据来源是客户端已有的会话投影：父会话 `subagentCatalog`（id / createdAt / mode / label）+
+  子会话 `subagent` / `subagentTiming` 投影与 `contextTimeline`（模型、费用）。不新增 host 逻辑，
+  投影属 dsh 内部结构，故放在开关后面，版本不符时关掉即可。
+
 ## 1.1.15（未发布）
 
 - 修正 dock 位置：从页面级浮层 `shell.overlay` 换到 `conversation.input.dock`（输入框卡片正上方、全宽），

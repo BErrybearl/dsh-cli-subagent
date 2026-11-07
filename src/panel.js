@@ -8,7 +8,7 @@ import React from "react";
  */
 const h = React.createElement;
 
-const DEFAULTS = { dock: true, tab: true, scope: "session", autoHideSeconds: 30, maxCards: 20, allowStop: true };
+const DEFAULTS = { dock: true, tab: true, scope: "session", autoHideSeconds: 30, maxCards: 20, allowStop: true, includeNative: false };
 const HIDE_KEY = "dsh-subagent.panel.hideAt";
 const OVERRIDE_KEY = "dsh-subagent.panel.override";
 
@@ -81,6 +81,63 @@ function scopedRuns(runs, cfg, sessionId) {
 	if (!sessionId) return [];
 	return runs.filter((run) => run.parentId === sessionId);
 }
+
+/**
+ * dsh 自带的子代理（subagent / subagent_fork / teammate）不经过本插件，
+ * 但客户端本来就收到它们的会话投影：父会话的 `subagentCatalog`（id/createdAt/mode/label）
+ * 加每个子会话的 `subagent` / `subagentTiming` 投影。这里把它们映射成同一份 run 形状，
+ * 只读展示（不能停止）。投影属于 dsh 内部结构，故由 `includeNative` 开关控制、默认关闭。
+ */
+function sessionMap(snap) {
+	if (!snap) return {};
+	if (snap.byId && typeof snap.byId === "object") return snap.byId;
+	if (snap.list?.byId && typeof snap.list.byId === "object") return snap.list.byId;
+	return {};
+}
+function nativeRunsFrom(snap, sessionId, scopeAll) {
+	const byId = sessionMap(snap);
+	const parents = scopeAll ? Object.keys(byId) : sessionId ? [sessionId] : [];
+	const seen = new Set();
+	const out = [];
+	for (const parentId of parents) {
+		const catalog = byId[parentId]?.projections?.subagentCatalog;
+		if (!Array.isArray(catalog)) continue;
+		for (const item of catalog) {
+			if (!item?.id || seen.has(item.id)) continue;
+			seen.add(item.id);
+			const row = byId[item.id] || {};
+			const projections = row.projections || {};
+			const timing = projections.subagentTiming;
+			const active = timing?.active;
+			const running = row.running === true || Boolean(active && active.through == null);
+			const settled = typeof timing?.settledMs === "number" ? timing.settledMs : 0;
+			const startedAt = typeof item.createdAt === "number" ? item.createdAt : 0;
+			const identity = projections.subagent;
+			const cost = typeof projections.contextTimeline?.cost === "number" ? projections.contextTimeline.cost : null;
+			out.push({
+				id: item.id,
+				provider: "dsh 内置",
+				driver: item.mode || identity?.mode || "",
+				label: item.label || identity?.label || row.displayTitle || row.title || item.id,
+				model: typeof projections.contextTimeline?.model === "string" ? projections.contextTimeline.model : null,
+				status: running ? "running" : "completed",
+				startedAt,
+				endedAt: running ? null : (typeof row.updatedAt === "number" ? row.updatedAt : startedAt + settled),
+				costUsd: cost,
+				native: true,
+				stalled: false,
+				idleSeconds: active && typeof active.through === "number" ? Math.max(0, Math.round((Date.now() - active.through) / 1000)) : 0,
+				parentId,
+			});
+		}
+	}
+	return out;
+}
+function useNativeRuns(props, sessionId, scopeAll) {
+	const useSessions = props?.useSessions;
+	const snap = typeof useSessions === "function" ? useSessions((value) => value) : null;
+	return React.useMemo(() => nativeRunsFrom(snap, sessionId, scopeAll), [snap, sessionId, scopeAll]);
+}
 function lastAction(run) {
 	const e = run.lastEvent;
 	if (!e) return run.status === "running" ? "启动中…" : "";
@@ -96,9 +153,10 @@ function Card({ run, onStop, stopEnabled }) {
 		h("div", { className: "sap-row" },
 			h("span", { className: "sap-dot" + (run.stalled ? " sap-stall" : ""), style: { background: run.stalled ? "#d9a400" : col } }),
 			h("span", { className: "sap-agent" }, run.provider || "?"),
+			run.native ? h("span", { className: "sap-native", title: "dsh 自带的子代理，只读" }, "内置") : null,
 			h("span", { className: "sap-model" }, modelText(run)),
 			h("span", { className: "sap-time" }, running ? fmtDur(Date.now() - (run.startedAt || 0)) : fmtDur((run.endedAt || 0) - (run.startedAt || 0))),
-			running && stopEnabled ? h("button", { className: "sap-x", title: "停止该子代理", onClick: () => onStop(run.id) }, "停止") : null,
+			running && stopEnabled && !run.native ? h("button", { className: "sap-x", title: "停止该子代理", onClick: () => onStop(run.id) }, "停止") : null,
 		),
 		h("div", { className: "sap-sub" },
 			h("span", { className: "sap-task" }, run.label || run.prompt || "(任务)"),
@@ -110,18 +168,20 @@ function Card({ run, onStop, stopEnabled }) {
 }
 
 /** 输入框正上方的常驻条；默认收起成一行，有新运行自动展开。 */
-function Dock({ connection, sessionId }) {
+function Dock({ connection, sessionId, hooks }) {
 	const [overrides, setOverrides] = React.useState(readOverrides);
 	const [hideAt, setHideAt] = React.useState(readHideAt);
 	const [open, setOpen] = React.useState(false);
 	const snap = useRuns(connection, 2000);
 	const cfg = { ...DEFAULTS, ...((snap && snap.cfg) || {}), ...overrides };
-	const all = scopedRuns(snap.runs || [], cfg, sessionId);
+	const natives = useNativeRuns(hooks, sessionId, cfg.scope === "all");
+	const external = scopedRuns(snap.runs || [], cfg, sessionId);
+	const all = cfg.includeNative ? [...external, ...natives] : external;
 	const stats = statsOf(all);
 	const now = Date.now();
 	const autoHide = Math.max(0, Number(cfg.autoHideSeconds) || 0);
 	const active = all.filter((run) => run.status === "running");
-	const recent = all.filter((run) => run.status !== "running" && !run.restored && (run.endedAt || 0) > hideAt && autoHide > 0 && (now - (run.endedAt || 0)) < autoHide * 1000);
+	const recent = all.filter((run) => run.status !== "running" && !run.restored && !run.native && (run.endedAt || 0) > hideAt && autoHide > 0 && (now - (run.endedAt || 0)) < autoHide * 1000);
 	const shown = [...active, ...recent].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)).slice(0, Math.max(1, Number(cfg.maxCards) || 20));
 	const prevActive = React.useRef(0);
 	React.useEffect(() => {
@@ -158,15 +218,17 @@ function Dock({ connection, sessionId }) {
 	);
 }
 
-function Tab({ connection, sessionId }) {
+function Tab({ connection, sessionId, hooks }) {
 	const [sel, setSel] = React.useState(null);
 	const [, setTick] = React.useState(0);
 	React.useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
 	const snap = useRuns(connection, 2000);
 	const [overrides] = React.useState(readOverrides);
 	const cfg = { ...DEFAULTS, ...((snap && snap.cfg) || {}), ...overrides };
+	const natives = useNativeRuns(hooks, sessionId, cfg.scope === "all");
 	if (!cfg.tab) return h("div", { className: "sap-empty" }, "运行面板已在「设置 › 运行面板」中关闭。");
-	const runs = scopedRuns(snap.runs || [], cfg, sessionId);
+	const external = scopedRuns(snap.runs || [], cfg, sessionId);
+	const runs = (cfg.includeNative ? [...external, ...natives] : external).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
 	const stats = statsOf(runs);
 	const max = Math.max(1, Number(cfg.maxCards) || 20);
 	const onStop = (id) => { rpc(connection, "stop", { runId: id }).catch(() => {}); };
@@ -189,12 +251,12 @@ function Tab({ connection, sessionId }) {
 					const [st, col] = statusOf(run);
 					const running = run.status === "running";
 					return h("tr", { key: run.id, className: "sap-tr", onClick: () => setSel(sel === run.id ? null : run.id) },
-						h("td", null, h("b", null, run.provider || "?")),
+						h("td", null, h("b", null, run.provider || "?"), run.native ? h("span", { className: "sap-native", title: "dsh 自带的子代理，只读" }, "内置") : null),
 						h("td", null, h("span", { className: "sap-model" }, modelText(run))),
 						h("td", null, h("span", { style: { color: col, fontWeight: 600 } }, st)),
 						h("td", null, running ? fmtDur(Date.now() - (run.startedAt || 0)) : fmtDur((run.endedAt || 0) - (run.startedAt || 0))),
 						h("td", { className: "sap-celltask" }, run.label || run.prompt || ""),
-						h("td", null, running && cfg.allowStop ? h("button", { className: "sap-x", onClick: (e) => { e.stopPropagation(); onStop(run.id); } }, "停止") : null),
+						h("td", null, running && cfg.allowStop && !run.native ? h("button", { className: "sap-x", onClick: (e) => { e.stopPropagation(); onStop(run.id); } }, "停止") : null),
 					);
 				})),
 			),
@@ -249,8 +311,9 @@ function Settings({ connection }) {
 		row("完成卡片自动收起", "0 = 不自动收", sel("autoHideSeconds", [["0", "不自动"], ["10", "10 秒"], ["30", "30 秒"], ["60", "60 秒"], ["300", "5 分钟"]], Number)),
 		row("卡片上限", "", sel("maxCards", [["10", "10"], ["20", "20"], ["40", "40"]], Number)),
 		row("[停止] 按钮（kill 进程）", "", toggle("allowStop")),
+		row("并入 dsh 内置子代理", "读会话投影，只读展示，带「内置」标；默认关闭", toggle("includeNative")),
 		note ? h("div", { className: "sap-warn" }, note) : null,
-		h("div", { className: "sap-note" }, "开关写回本插件的配置（cordis.patch.yml 的 panel 节点），改完立即生效，无需重启。数据来自插件 runs 账本；模型取自 CLI 事件，取不到时显示「CLI 默认」。「强制所有调用走插件路径」为待开发项。"),
+		h("div", { className: "sap-note" }, "开关写回本插件的配置（cordis.patch.yml 的 panel 节点），改完立即生效，无需重启。数据来自插件 runs 账本；模型取自 CLI 事件，取不到时显示「CLI 默认」。勾选「并入 dsh 内置子代理」后，dsh 自带的 subagent / subagent_fork / teammate 会以「内置」标只读列出（读会话投影，不可停止）。「强制所有调用走插件路径」为待开发项。"),
 	);
 }
 
@@ -276,6 +339,7 @@ const PANEL_STYLE = `
 .sap-dot.sap-stall { animation: sap-blink 1.2s ease-in-out infinite; }
 @keyframes sap-blink { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
 .sap-agent { font-weight: 600; }
+.sap-native { font-size: 9.5px; padding: 0 5px; border-radius: 4px; border: 1px solid var(--dsw-alias-border-l3); color: var(--dsw-alias-label-secondary); }
 .sap-model { font-size: 10px; padding: 0 6px; border-radius: 999px; background: color-mix(in srgb, var(--dsw-alias-brand-primary) 14%, transparent); color: var(--dsw-alias-brand-primary); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sap-time { margin-left: auto; color: var(--dsw-alias-label-secondary); font-variant-numeric: tabular-nums; font-size: 11px; }
 .sap-x { font-size: 10px; padding: 1px 7px; border-radius: 6px; border: 1px solid color-mix(in srgb, #e5533c 45%, transparent); color: #e5533c; background: transparent; cursor: pointer; }
@@ -327,13 +391,13 @@ export function registerPanel(ctx) {
 		name: "conversation.input.dock",
 		id: "subagent-run-dock",
 		order: 40,
-	}, (props) => h(Dock, { connection: connection(), sessionId: props?.sessionId ?? props?.session?.id ?? null })));
+	}, (props) => h(Dock, { connection: connection(), sessionId: props?.sessionId ?? props?.session?.id ?? null, hooks: props })));
 	ctx.slots.inject("conversation.view", () => ctx.slots.register({
 		name: "conversation.view",
 		id: "subagent-run-tab",
 		order: 40,
 		label: () => "子代理",
-	}, (props) => h(Tab, { connection: connection(), sessionId: props?.sessionId ?? props?.session?.id ?? null })));
+	}, (props) => h(Tab, { connection: connection(), sessionId: props?.sessionId ?? props?.session?.id ?? null, hooks: props })));
 	ctx.slots.inject("settings.section", () => ctx.slots.register({
 		name: "settings.section",
 		id: "subagent-run-panel",
