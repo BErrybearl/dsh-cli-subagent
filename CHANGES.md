@@ -1,5 +1,17 @@
 # 本分支的改动
 
+## 1.1.20（未发布）
+
+- **主控可以选模型和强度**：`subagent_backends` 提示词改为逐后端列出默认模型、可选模型、支持的强度档位；
+  委派工具（工具名=后端名，如 `codex` / `pi`）新增两个可选参数 `model`、`reasoning`。
+  - 白名单校验：模型必须在该后端配置的 `model` / `models` 里，强度必须在驱动支持的档位里，否则直接报错，不静默忽略。
+  - 指定的模型排到回退链最前，失败后仍按配置里的其它模型继续；强度只覆盖本次调用。
+  - 驱动映射（实测）：pi `--model` + `--thinking`（off/minimal/low/medium/high/xhigh/max）；
+    codex `-m` + `-c model_reasoning_effort=`（minimal/low/medium/high/xhigh/max/ultra）。其余驱动不支持强度参数。
+- 设置页新增「后端」分组：只列本机检测到的 CLI，未安装的收进折叠区；逐行开关写回 `providers`，
+  另给「一键启用已检测到的」。`providers` 默认改为空数组，新装不再罗列全部内置后端名。
+- pi 运行中显示真实调用的模型（`provider/model`，取自助手消息），不再一律显示「CLI 默认」。
+
 ## 1.1.19（未发布）
 
 - dock 卡片精简成单行：状态点 / 后端 / 模型 / 耗时 /（可选成本）/ 停止；任务文案改为悬停 title，

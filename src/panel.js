@@ -79,6 +79,16 @@ function useCfg(snap) {
 	return [{ ...DEFAULTS, ...((snap && snap.cfg) || {}), ...overrides }, overrides];
 }
 
+/** 本机检测到的子代理后端列表：backends 接口一次拉全，backend 接口逐个开关。 */
+function useBackends(connection) {
+	const [items, setItems] = React.useState([]);
+	const load = React.useCallback(() => {
+		rpc(connection, "backends", {}).then((v) => setItems(v?.items || [])).catch(() => {});
+	}, [connection]);
+	React.useEffect(() => { load(); }, [load]);
+	return [items, load];
+}
+
 function fmtDur(ms) {
 	const s = Math.max(0, Math.round((ms || 0) / 1000));
 	const m = Math.floor(s / 60);
@@ -295,6 +305,70 @@ function Tab({ connection, sessionId, hooks }) {
 	);
 }
 
+/** 「后端」分组：已安装的逐行开关，未装好的收进折叠区；可先启用，装好 CLI 后自动可用。 */
+function Backends({ connection }) {
+	const [items, load] = useBackends(connection);
+	const [open, setOpen] = React.useState(false);
+	const [err, setErr] = React.useState("");
+	const installed = items.filter((it) => it.installed);
+	const missing = items.filter((it) => !it.installed);
+	const off = installed.filter((it) => !it.enabled);
+	const toggle = async (it) => {
+		setErr("");
+		try {
+			await rpc(connection, "backend", { name: it.name, enabled: !it.enabled });
+			load();
+		} catch (error) {
+			setErr(`切换「${it.name}」失败（${String(error?.message ?? error).slice(0, 80)}）。`);
+		}
+	};
+	// 一键启用：依次逐个调 backend，避免并发打到 host；全部发完再统一刷新。
+	const enableAll = async () => {
+		setErr("");
+		try {
+			for (const it of off) await rpc(connection, "backend", { name: it.name, enabled: true });
+			load();
+		} catch (error) {
+			load();
+			setErr(`一键启用中断（${String(error?.message ?? error).slice(0, 80)}），已启用的保持生效。`);
+		}
+	};
+	return h("div", { className: "sap-group sap-backends" },
+		h("div", { className: "sap-gtitle" }, "后端"),
+		h("div", { className: "sap-sethint" }, "只列这台机器检测到的 CLI；未安装的收在下面"),
+		installed.map((it) => h("div", { className: "sap-setrow", key: it.name },
+			h("div", { className: "sap-setlab" },
+				h("b", null, it.name),
+				it.guide ? h("div", { className: "sap-sethint" }, it.guide) : null),
+			h("div", { className: "sap-setctl" },
+				h("button", {
+					className: "sap-pill" + (it.enabled ? " sap-on" : ""),
+					role: "switch", "aria-checked": it.enabled ? "true" : "false",
+					onClick: () => toggle(it),
+				}, h("span"))),
+		)),
+		off.length ? h("div", { className: "sap-setrow" },
+			h("div", { className: "sap-setlab" }),
+			h("div", { className: "sap-setctl" },
+				h("button", { className: "sap-bkbtn", onClick: enableAll }, "一键启用已检测到的")),
+		) : null,
+		missing.length ? h(React.Fragment, null,
+			h("div", { className: "sap-setrow" },
+				h("div", { className: "sap-setlab" },
+					h("span", { className: "sap-link", onClick: () => setOpen((o) => !o) },
+						`${open ? "▾" : "▸"} 其他后端（${missing.length}，未安装）`))),
+			open ? missing.map((it) => h("div", { className: "sap-setrow", key: it.name },
+				h("div", { className: "sap-setlab" }, h("span", { className: "sap-sethint" }, it.name)),
+				h("div", { className: "sap-setctl" },
+					it.enabled
+						? h("span", { className: "sap-sethint" }, "已启用")
+						: h("button", { className: "sap-bkbtn", onClick: () => toggle(it) }, "启用")),
+			)) : null,
+		) : null,
+		err ? h("div", { className: "sap-warn" }, err) : null,
+	);
+}
+
 /** 「自由子代理」插件页里的运行面板分组：入口 / 显示 / 操作 / 数据 + 统计 + 恢复默认。 */
 function Settings({ connection }) {
 	const snap = useRuns(connection, 4000);
@@ -335,6 +409,7 @@ function Settings({ connection }) {
 			onClick: () => persist({ [key]: cast ? cast(value) : value }),
 		}, label)));
 	return h("div", { className: "sap-settings" },
+		h(Backends, { connection }),
 		h("div", { className: "sap-stats" },
 			h("span", null, `总计 ${stats.total}`),
 			h("span", null, `运行 ${stats.running}`),
@@ -434,6 +509,12 @@ const PANEL_STYLE = `
 .sap-reset:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-overlay); }
 .sap-note { color: var(--dsw-alias-label-secondary); font-size: 11px; }
 .sap-warn { color: #d9a400; font-size: 11px; padding: 6px 0; }
+/* 「后端」分组：与下方运行面板分组用一条分隔线隔开，折叠标题可点。 */
+.sap-backends { border-bottom: 1px solid var(--dsw-alias-border-l1); padding-bottom: 10px; margin-bottom: 2px; }
+.sap-link { cursor: pointer; color: var(--dsw-alias-label-secondary); }
+.sap-link:hover { color: var(--dsw-alias-label-primary); }
+.sap-bkbtn { font-size: 11.5px; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; }
+.sap-bkbtn:hover { background: var(--dsw-alias-bg-overlay); }
 `;
 
 export function registerPanel(ctx) {
