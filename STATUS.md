@@ -5,6 +5,7 @@
 - 已发布公开仓库：GitHub `dsh-subagent-plus`（main 分支）。
 - 已在 WorkHub `05-vibe-coding` 登记为 VC-011（下一号 VC-012）。
 - 1.1.13：委派 label 改为「后端名 · 描述」。
+- 1.1.18（未发布）：dock 常驻（空闲也显示统计，新增 hideWhenIdle 开关）；运行面板设置并入「自由子代理」插件页并分组、分段按钮、恢复默认；内置子代理投影改为按需挂载。
 - 1.1.16（未发布）：在 1.1.15 基础上增加 `panel.includeNative` 开关（默认关），把 dsh 自带子代理以「内置」标只读并入面板（读会话投影 subagentCatalog / subagentTiming）。
 - 1.1.15（未发布）：修正 dock 位置（`conversation.input.dock`，输入框正上方）、会话串号（按 `sessionId` 过滤）、
   重启后旧记录假弹出（`restored` 标记）；dock 加 ✕ 隐藏、默认收起、有新运行自动展开；六个开关迁到插件配置
