@@ -4,6 +4,7 @@
 
 - 已发布公开仓库：GitHub `dsh-subagent-plus`（main 分支）。
 - 已在 WorkHub `05-vibe-coding` 登记为 VC-011（下一号 VC-012）。
+- 1.1.22（未发布）：修复内置子代理统计（改读 `projectionsBySession[父].values.subagentCatalog` + `byId[子].running`/`subagentTiming`，跳过 mode=external）；管理界面移到设置侧边栏「子代理」分区，Tab 只留运行。
 - 1.1.21（未发布）：管理界面收口到「子代理」Tab 的「运行 / 设置」两个子页（不再在插件页重复）；dock 无内容即不出现、✕ 隐藏整条；后端分组可添加自定义后端并编辑模型/强度/并发/二进制（新增 `backend-config` 接口）。
 - 1.1.20（未发布）：主控可选模型/强度（`subagent_backends` 列出每后端默认模型、可选模型、强度档位；委派工具加 `model`/`reasoning`，白名单校验、指定模型排回退链最前）；设置页加「后端」分组（只列检测到的 CLI + 一键启用，`providers` 默认空）；pi 显示真实模型。
 - 1.1.13：委派 label 改为「后端名 · 描述」。

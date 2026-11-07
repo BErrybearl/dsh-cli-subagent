@@ -97,7 +97,7 @@ function fmtDur(ms) {
 }
 const STATUS = { running: ["运行中", "#d9a400"], completed: ["完成", "#3f9d5a"], error: ["出错", "#e5533c"], aborted: ["已取消", "#8a8a8a"] };
 function statusOf(run) { return STATUS[run.status] || ["…", "#8a8a8a"]; }
-function modelText(run) { return run.model || "CLI 默认"; }
+function modelText(run) { return run.native ? "dsh 内置" : (run.model || "CLI 默认"); }
 function statsOf(runs) {
 	const out = { total: runs.length, running: 0, completed: 0, error: 0, aborted: 0, costUsd: 0 };
 	for (const run of runs) {
@@ -127,42 +127,37 @@ function lastAction(run) {
  * 加每个子会话的 `subagent` / `subagentTiming` 投影。这里映射成同一份 run 形状，只读。
  * 投影属 dsh 内部结构，故由 `includeNative` 开关控制、默认关闭。
  */
-function sessionMap(snap) {
-	if (!snap) return {};
-	if (snap.byId && typeof snap.byId === "object") return snap.byId;
-	if (snap.list?.byId && typeof snap.list.byId === "object") return snap.list.byId;
-	return {};
-}
 function nativeRunsFrom(snap, sessionId, scopeAll) {
-	const byId = sessionMap(snap);
-	const parents = scopeAll ? Object.keys(byId) : sessionId ? [sessionId] : [];
+	if (!snap) return [];
+	// dsh 的会话列表快照:byId 是会话摘要,子代理目录在 projectionsBySession[父会话].values.subagentCatalog。
+	const byId = snap.byId ?? snap.list?.byId ?? {};
+	const bySession = snap.projectionsBySession ?? snap.list?.projectionsBySession ?? {};
+	const parents = scopeAll ? Object.keys(bySession) : sessionId ? [sessionId] : [];
 	const seen = new Set();
 	const out = [];
 	for (const parentId of parents) {
-		const catalog = byId[parentId]?.projections?.subagentCatalog;
+		const catalog = bySession[parentId]?.values?.subagentCatalog ?? byId[parentId]?.projections?.subagentCatalog;
 		if (!Array.isArray(catalog)) continue;
 		for (const item of catalog) {
-			if (!item?.id || seen.has(item.id)) continue;
+			// mode 为 external 的是本插件派出去的外部 CLI,已经在 runs 里,这里跳过。
+			if (!item?.id || item.mode === "external" || seen.has(item.id)) continue;
 			seen.add(item.id);
-			const row = byId[item.id] || {};
-			const projections = row.projections || {};
-			const timing = projections.subagentTiming;
+			const row = byId[item.id] ?? {};
+			const timing = bySession[item.id]?.values?.subagentTiming ?? row.projections?.subagentTiming;
 			const active = timing?.active;
 			const running = row.running === true || Boolean(active && active.through == null);
 			const settled = typeof timing?.settledMs === "number" ? timing.settledMs : 0;
 			const startedAt = typeof item.createdAt === "number" ? item.createdAt : 0;
-			const identity = projections.subagent;
-			const cost = typeof projections.contextTimeline?.cost === "number" ? projections.contextTimeline.cost : null;
 			out.push({
 				id: item.id,
 				provider: "dsh 内置",
-				driver: item.mode || identity?.mode || "",
-				label: item.label || identity?.label || row.displayTitle || row.title || item.id,
-				model: typeof projections.contextTimeline?.model === "string" ? projections.contextTimeline.model : null,
+				driver: item.mode || "",
+				label: item.label || row.displayTitle || row.projectionValues?.title || row.title || item.id,
+				model: null,
 				status: running ? "running" : "completed",
 				startedAt,
 				endedAt: running ? null : (typeof row.updatedAt === "number" ? row.updatedAt : startedAt + settled),
-				costUsd: cost,
+				costUsd: null,
 				native: true,
 				stalled: false,
 				idleSeconds: active && typeof active.through === "number" ? Math.max(0, Math.round((Date.now() - active.through) / 1000)) : 0,
@@ -297,17 +292,11 @@ function Dock({ connection, sessionId, hooks, onOpenTab }) {
 
 function Tab({ connection, sessionId, hooks }) {
 	const [sel, setSel] = React.useState(null);
-	const [pane, setPane] = React.useState("runs");
 	const [natives, setNatives] = React.useState([]);
 	const [, setTick] = React.useState(0);
 	React.useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
 	const snap = useRuns(connection, 2000);
 	const [cfg] = useCfg(snap);
-	const panes = h("div", { className: "sap-subtabs" },
-		h("button", { className: "sap-subtab" + (pane === "runs" ? " sap-subtab-on" : ""), onClick: () => setPane("runs") }, "运行"),
-		h("button", { className: "sap-subtab" + (pane === "settings" ? " sap-subtab-on" : ""), onClick: () => setPane("settings") }, "设置"));
-	// 「设置」是这个插件唯一的管理入口,所以即使标签页开关被关掉也保留它,避免把自己锁在外面。
-	if (pane === "settings") return h("div", { className: "sap-tab" }, panes, h(Settings, { connection }));
 	const external = scopedRuns(snap.runs || [], cfg, sessionId);
 	const runs = (cfg.includeNative ? [...external, ...natives] : external).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
 	const stats = statsOf(runs);
@@ -316,7 +305,6 @@ function Tab({ connection, sessionId, hooks }) {
 	const selRun = sel ? runs.find((r) => r.id === sel) : null;
 	return h("div", { className: "sap-tab" },
 		cfg.includeNative ? h(NativeProbe, { hooks, sessionId, scopeAll: cfg.scope === "all", onData: setNatives }) : null,
-		panes,
 		h("div", { className: "sap-tabhead" },
 			h("b", null, "子代理"),
 			h("span", { className: "sap-stat" }, `总计 ${stats.total}`),
@@ -707,5 +695,11 @@ export function registerPanel(ctx) {
 		order: 40,
 		label: () => "子代理",
 	}, (props) => h(Tab, { connection: connection(), sessionId: props?.sessionId ?? props?.session?.id ?? null, hooks: props })));
-	// 管理入口只在「子代理」Tab 的「设置」子页里,不在插件页重复一份,避免两处不一致。
+	// 管理界面只放一处:设置侧边栏的「子代理」分区;插件页保留 dsh 自动生成的原始配置表单作兜底。
+	ctx.slots.inject("settings.section", () => ctx.slots.register({
+		name: "settings.section",
+		id: "subagent-run-panel",
+		order: 17,
+		label: () => "子代理",
+	}, () => h(Settings, { connection: connection() })));
 }

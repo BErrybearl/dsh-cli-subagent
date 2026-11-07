@@ -1,5 +1,15 @@
 # 本分支的改动
 
+## 1.1.22（未发布）
+
+- **修复内置子代理统计不到**：dsh 的会话列表快照里，子代理目录在
+  `projectionsBySession[父会话].values.subagentCatalog`，子会话状态在 `byId[子会话].running` 与 `subagentTiming` 投影；
+  之前读的是 `byId[父].projections.subagentCatalog` 和并不存在的 `contextTimeline`，所以永远为空。
+  现在按正确路径读取，并跳过 `mode: "external"`（本插件派出的外部 CLI，已在 runs 里，避免重复计数）。
+  内置子代理的模型/成本这两个投影不提供，卡片显示「dsh 内置」与 `—`。
+- 管理界面改到**设置侧边栏的「子代理」分区**（`settings.section`），「子代理」Tab 只留运行视图；
+  插件页保留 dsh 自动生成的原始配置表单作兜底。
+
 ## 1.1.21（未发布）
 
 - 管理界面按方案 A 收口：**只在「子代理」Tab 里**，分「运行 / 设置」两个子页；设置不再在「自由子代理」插件页重复嵌一份，
