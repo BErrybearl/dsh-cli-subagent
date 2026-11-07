@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+coverage/
+.nyc_output/
+*.log
+.env
+.env.*
+*.tgz
+.pnpm-store/
+/.vs
+shots/

@@ -1,0 +1,78 @@
+{
+  "name": "dsh-subagent",
+  "version": "1.1.13",
+  "description": "把本机 Qoder、QoderCN、Codex、Claude、OpenCode、Pi、CodeBuddy 等外部 CLI 注册为 DSH 子代理后端,支持模型故障转移链、实时进度、额度显示、设置页与斜杠指令。",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/*.js",
+    "lib/*.cjs",
+    "lib/*.ps1",
+    "src/*.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "NOTICE",
+    "CHANGES.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build-client.mjs"
+  },
+  "keywords": [
+    "dsh-plugin",
+    "dsh-subagent",
+    "deepseek-harness",
+    "subagent",
+    "qoder",
+    "qodercli",
+    "qodercn",
+    "codex",
+    "claude",
+    "subscription"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BErrybearl/dsh-subagent-plus.git"
+  },
+  "homepage": "https://github.com/BErrybearl/dsh-subagent-plus",
+  "bugs": {
+    "url": "https://github.com/BErrybearl/dsh-subagent-plus/issues"
+  },
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0",
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh-session": ">=0.2.1-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-subagent": ">=0.2.1-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-tool-subagent": ">=0.2.1-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2 <0.3.0",
+    "@deepseek-ai/schemastery": "^3.18.2",
+    "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "puppeteer-core": "^25.14.0",
+    "react": "^18.2.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

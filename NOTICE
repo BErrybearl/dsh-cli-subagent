@@ -1,0 +1,16 @@
+本仓库是 dsh-subagent 的社区增强分支（fork）。
+
+上游项目：dsh-subagent
+- 作者：1373700184（wujianzhan）
+- 仓库：https://github.com/1373700184/dsh-subagent
+- 版本 / 提交：v1.1.12 / 9b0b5acdce181a6a94dccbabbc2e53f08158d4e6
+- 许可：MIT（见上游 package.json 的 license 字段）
+
+本分支在上游基础上新增或修改的部分见 CHANGES.md。上游代码版权归原作者所有；
+本分支新增/修改部分版权归 BErrybearl 所有，同样以 MIT 许可发布。
+
+参考与致谢（同类 dsh 插件，仅借鉴思路，未直接复制其代码）：
+- @deepseek-ai/dsh-subagent-codex、@deepseek-ai/dsh-subagent-claude-code（官方 Codex / Claude Code 子代理）
+- dsh-subagent-codebuddy（外部子代理的进度与监控面板思路）
+- dsh-subagent-antigravity（一次性外部 CLI 子代理的写法）
+- @leetoners/dsh-ui-subagent-monitor（子代理运行监视面板）
