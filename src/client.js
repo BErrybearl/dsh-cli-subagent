@@ -1,4 +1,5 @@
 import React from "react";
+import { registerPanel } from "./panel.js";
 
 /**
 * dsh-subagent 插件的浏览器端设置页:一个设置分区,
@@ -727,6 +728,7 @@ function apply(ctx) {
 			inject: () => ({ connection: ctx.get("connection") }),
 		}, QoderToolView));
 	}
+	registerPanel(ctx);
 }
 
 export { apply, inject, name };
