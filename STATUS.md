@@ -2,6 +2,10 @@
 
 ## 当前
 
+- 1.1.26（未发布，分支 `agent/vibe/settings-section`）：管理面板迁到「设置 → 子代理」(`settings.section`，id `qoder-subagent`，order 17)；
+  删除 `plugins.bundle.config` 与 Tab 的「管理」按钮；后端列表改为「已配置 ∪ 本机检测到」，去掉「未安装」折叠组；
+  host 新增 `scan`（4 秒预算、不执行 CLI）与 `backend-check` 两个只读路由；手动添加支持路径检测。
+  设计文档 `docs/settings-section-design.md`。
 - 已发布公开仓库：GitHub `dsh-subagent-plus`（main 分支）。
 - 已在 WorkHub `05-vibe-coding` 登记为 VC-011（下一号 VC-012）。
 - 1.1.25（未发布）：修 1.1.24 的两个产物级问题——`panel.js` 里 dock / 标签页槽位各注册了两遍（删掉旧的一份）；
@@ -35,5 +39,6 @@
 - 部署 1.1.16 到 dsh profile，在真实会话验证（需完全退出 dsh 后安装；命令行里 `DSH_HOME` 要指向 dsh 主目录，否则会报「先打开一次再完全退出」）。
 - 待开发：「让所有子代理调用都走本插件路径」——①引导优先走插件 ②监测非托管 CLI 进程 ③PATH 命令包装强制接管，风险递增，暂不启用。
 - 迭代：面板样式/字段微调、历史详情增强、范围（本会话/全部）在无会话 id 时的回退。
+- 待实测（1.1.26 装后）：①设置侧边栏出现「子代理」一项（在「内置插件」之后、「Agent 预设」之前），点进去是完整面板；②插件详情页没有第二份面板；③后端列表只剩 pi/codex/claude，不再有 qoder/codebuddy 的「未安装」组；④「搜索本机 CLI」能列出未加入的候选、点「加入」后写入 `cordis.patch.yml` 的 providers；⑤手动添加的「检测」能把路径规范化并给建议 driver。
 - 待实测（1.1.25 装后）：①「插件 › dsh-subagent」详情页是否显示完整面板（两位复核对“是否自动渲染 schema 表单”结论相反，pi 说不渲染）；②开关是否真的写进 `cordis.patch.yml`（以前只落 localStorage）；③内置子代理是否出现在面板里；④停用后端再启用，模型设置是否仍在。若面板没出现，先查 `plugins.bundle.config` 的 key 是否等于包名 `dsh-subagent`。
 - 待开发：升级/禁用期间暂停查询（`ctx.pluginChanges.bundle(packageName)`）；停用后是否清理存储与进程策略。
