@@ -20,7 +20,7 @@
   重启后旧记录假弹出（`restored` 标记）；dock 加 ✕ 隐藏、默认收起、有新运行自动展开；六个开关迁到插件配置
   `panel` 节点（`cordis.patch.yml` 可见，设置界面写回、即时生效，失败退回本地）。
 - `node --check` 通过；`node scripts/build-client.mjs` 构建通过（已生成 `lib/client.js`）。
-- 本地 dsh profile 已装本仓库 1.1.25（commit `32aba24`）。装的时候 `github:` 解析要 `git ls-remote`，而本机 git 直连 github.com 被墙，故改用 codeload tar.gz 链接安装，profile 里该项依赖现在是该 URL（下次更新同样传 tar.gz 链接即可）。
+- 本地 dsh profile 已装本仓库 1.1.25（`github:BErrybearl/dsh-subagent-plus#bddfa7c`，2026-11-08）。本机 git 曾因未配代理而连不上 github.com（pnpm 解析 `github:` 要先 `git ls-remote`），已给 git 配上 `http(s).proxy=http://127.0.0.1:28080` 后恢复正常；换机器或代理端口变了要同步改这一项。
 
 ## 决定与约束
 
