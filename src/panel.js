@@ -710,23 +710,6 @@ export function registerPanel(ctx) {
 			ctx.get("uiConversation")?.binding?.(sessionId)?.activate?.("subagent-run-tab");
 		} catch {}
 	};
-	// 输入框卡片正上方的常驻条：这个槽位自带 session 作用域与 props.sessionId。
-	ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
-		name: "conversation.input.dock",
-		id: "subagent-run-dock",
-		order: 40,
-	}, (props) => h(Dock, {
-		connection: connection(),
-		sessionId: props?.sessionId ?? props?.session?.id ?? null,
-		hooks: props,
-		onOpenTab: openTab,
-	})));
-	ctx.slots.inject("conversation.view", () => ctx.slots.register({
-		name: "conversation.view",
-		id: "subagent-run-tab",
-		order: 40,
-		label: () => "子代理",
-	}, (props) => h(Tab, { connection: connection(), sessionId: props?.sessionId ?? props?.session?.id ?? null, hooks: props })));
 	// 打开本插件在「插件」页的详情(唯一管理入口)。
 	const openManage = () => {
 		try {

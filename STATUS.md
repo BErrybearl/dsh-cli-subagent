@@ -4,6 +4,9 @@
 
 - 已发布公开仓库：GitHub `dsh-subagent-plus`（main 分支）。
 - 已在 WorkHub `05-vibe-coding` 登记为 VC-011（下一号 VC-012）。
+- 1.1.25（未发布）：修 1.1.24 的两个产物级问题——`panel.js` 里 dock / 标签页槽位各注册了两遍（删掉旧的一份）；
+  上游 `settings.section`（id `qoder-subagent`，label「自由子代理」）此前从未真正移除，现在不再注册
+  （组件 `QoderSection` 留在源码里备回退）。管理入口只剩「插件 › dsh-subagent」详情一处。
 - 1.1.24（未发布）：修面板写回协议（按 key 发 {key,value}、reset 清本地覆盖）与 providers 整段覆盖丢字段；停用后端保留设置（新增 enabled 字段）；管理面板合并到「插件 › 本插件详情」，删掉设置侧边栏「子代理」分区、Tab 头部加「管理」按钮。
 - 1.1.23（未发布）：侧边栏按方案 D 合并——设置导航「子代理」为唯一管理界面；插件页只留指路条 + dsh 自动生成的原始表单；设置页加「原始配置（只读）」折叠块。
 - 1.1.22（未发布）：修复内置子代理统计（改读 `projectionsBySession[父].values.subagentCatalog` + `byId[子].running`/`subagentTiming`，跳过 mode=external）；管理界面移到设置侧边栏「子代理」分区，Tab 只留运行。
@@ -17,7 +20,7 @@
   重启后旧记录假弹出（`restored` 标记）；dock 加 ✕ 隐藏、默认收起、有新运行自动展开；六个开关迁到插件配置
   `panel` 节点（`cordis.patch.yml` 可见，设置界面写回、即时生效，失败退回本地）。
 - `node --check` 通过；`node scripts/build-client.mjs` 构建通过（已生成 `lib/client.js`）。
-- 本地 dsh profile 已装本仓库 1.1.14（`github:BErrybearl/dsh-subagent-plus#f8b9214`）；1.1.16 待重新安装。
+- 本地 dsh profile 已装本仓库 1.1.25（`github:BErrybearl/dsh-subagent-plus#<sha>`，装后回填）。
 
 ## 决定与约束
 
@@ -32,5 +35,5 @@
 - 部署 1.1.16 到 dsh profile，在真实会话验证（需完全退出 dsh 后安装；命令行里 `DSH_HOME` 要指向 dsh 主目录，否则会报「先打开一次再完全退出」）。
 - 待开发：「让所有子代理调用都走本插件路径」——①引导优先走插件 ②监测非托管 CLI 进程 ③PATH 命令包装强制接管，风险递增，暂不启用。
 - 迭代：面板样式/字段微调、历史详情增强、范围（本会话/全部）在无会话 id 时的回退。
-- 待实测（1.1.24 装后）：①「插件 › dsh-subagent」详情页是否显示完整面板（两位复核对“是否自动渲染 schema 表单”结论相反，pi 说不渲染）；②开关是否真的写进 `cordis.patch.yml`（以前只落 localStorage）；③内置子代理是否出现在面板里；④停用后端再启用，模型设置是否仍在。若面板没出现，先查 `plugins.bundle.config` 的 key 是否等于包名 `dsh-subagent`。
+- 待实测（1.1.25 装后）：①「插件 › dsh-subagent」详情页是否显示完整面板（两位复核对“是否自动渲染 schema 表单”结论相反，pi 说不渲染）；②开关是否真的写进 `cordis.patch.yml`（以前只落 localStorage）；③内置子代理是否出现在面板里；④停用后端再启用，模型设置是否仍在。若面板没出现，先查 `plugins.bundle.config` 的 key 是否等于包名 `dsh-subagent`。
 - 待开发：升级/禁用期间暂停查询（`ctx.pluginChanges.bundle(packageName)`）；停用后是否清理存储与进程策略。

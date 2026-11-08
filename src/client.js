@@ -441,6 +441,8 @@ function CustomBackendModal({ form, onClose }) {
 
 const LAYOUT_KEY = "qsub.layout";
 
+// 上游的设置分区表单：1.1.24 起不再注册到 settings.section（管理界面已并入插件详情），
+// 组件保留在此，若插件详情面板不可用可一行注回。
 function QoderSection({ form, connection }) {
 	const subscribe = React.useCallback((cb) => form.subscribe(cb), [form]);
 	const getSnapshot = React.useCallback(() => form.getSnapshot(), [form]);
@@ -703,7 +705,6 @@ function QoderToolView({ block, connection }) {
 }
 
 function apply(ctx) {
-	const form = ctx.configForms.get(ENTRY_ID);
 	ctx.effect(() => ctx.locale.register(LOCALE_NS, LOCALES), "qoder-subagent: copy");
 	ctx.effect(() => {
 		const tag = document.createElement("style");
@@ -712,14 +713,8 @@ function apply(ctx) {
 		document.head.append(tag);
 		return () => tag.remove();
 	}, "qoder-subagent: styles");
-	ctx.slots.inject("settings.section", () => ctx.slots.register({
-		name: "settings.section",
-		id: "qoder-subagent",
-		order: 16,
-		locale: LOCALE_NS,
-		label: () => "自由子代理",
-		inject: () => ({ form, connection: ctx.get("connection") }),
-	}, QoderSection));
+	// 1.1.24 起管理界面只在本插件的「插件」详情区(见 panel.js 的 plugins.bundle.config)，
+	// 设置页不再注册任何本插件分区；旧的 settings.section 表单(QoderSection)保留组件备回退。
 	for (const toolName of BUILTIN_BACKENDS.map((backend) => backend.name)) {
 		ctx.slots.inject("tool.call.toolview", () => ctx.slots.register({
 			name: "tool.call.toolview",
