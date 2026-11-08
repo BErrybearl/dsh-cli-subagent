@@ -273,7 +273,7 @@ function Dock({ connection, sessionId, hooks, onOpenTab }) {
 				...summary,
 				h("span", { className: "sap-sp" }),
 				h("span", { className: "sap-scope" }, cfg.scope === "session" ? "本会话" : "全部"),
-				onOpenTab && sessionId ? h("button", { className: "sap-open2", title: "在「子代理」页查看全部", onClick: () => onOpenTab(sessionId) }, "↗") : null,
+				onOpenTab && sessionId && cfg.tab ? h("button", { className: "sap-open2", title: "在「子代理」页查看全部", onClick: () => onOpenTab(sessionId) }, "↗") : null,
 				h("button", { className: "sap-close", title: "隐藏这一行（新运行会再出现）", onClick: dismiss }, "✕"),
 			),
 			open && shown.length ? h("div", { className: "sap-cards" }, shown.map((run) => h(Card, {
@@ -290,13 +290,14 @@ function Dock({ connection, sessionId, hooks, onOpenTab }) {
 	);
 }
 
-function Tab({ connection, sessionId, hooks }) {
+function Tab({ connection, sessionId, hooks, onOpenManage }) {
 	const [sel, setSel] = React.useState(null);
 	const [natives, setNatives] = React.useState([]);
 	const [, setTick] = React.useState(0);
 	React.useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
 	const snap = useRuns(connection, 2000);
 	const [cfg] = useCfg(snap);
+	if (!cfg.tab) return null;
 	const external = scopedRuns(snap.runs || [], cfg, sessionId);
 	const runs = (cfg.includeNative ? [...external, ...natives] : external).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
 	const stats = statsOf(runs);
@@ -313,6 +314,7 @@ function Tab({ connection, sessionId, hooks }) {
 			h("span", { className: "sap-stat sap-errt" }, `出错 ${stats.error}`),
 			cfg.showCost ? h("span", { className: "sap-stat" }, `成本 $${stats.costUsd.toFixed(4)}`) : null,
 			h("span", { className: "sap-scope" }, cfg.scope === "session" ? "本会话" : "全部会话"),
+			onOpenManage ? h("button", { className: "sap-bkbtn", onClick: onOpenManage, title: "打开「插件 › 本插件」详情，管理后端与面板" }, "管理") : null,
 		),
 		runs.length === 0
 			? h("div", { className: "sap-empty" }, cfg.scope === "session" && !sessionId ? "等待会话加载…" : "暂无子代理运行记录。")
@@ -379,17 +381,18 @@ function BackendAdvanced({ connection, item, onSaved }) {
 	};
 	const field = (label, control) => h("label", { className: "sap-field" }, h("span", null, label), control);
 	return h("div", { className: "sap-adv" },
-		h("div", { className: "sap-advrow" },
+		h("div", { className: "sap-advhead" },
+			h("div", { className: "sap-advlab" }, `▾ 高级参数 · ${item.name}`, h("span", null, "后端默认配置")),
+			h("div", { className: "sap-advact" },
+				h("button", { className: "sap-bkbtn", onClick: probe, disabled: busy }, "探测模型"),
+				h("button", { className: "sap-bkbtn sap-primary", onClick: save, disabled: busy }, "保存"),
+				msg ? h("span", { className: "sap-sethint" }, msg) : null)),
+		h("div", { className: "sap-fields" },
 			field("默认模型", h("input", { className: "sap-inp", value: model, placeholder: "留空 = CLI 默认", onChange: (e) => setModel(e.target.value) })),
 			levels.length ? field("默认强度", h("select", { className: "sap-inp", value: effort, onChange: (e) => setEffort(e.target.value) },
 				[["auto", "自动"], ...levels.map((x) => [x, x])].map(([v, l]) => h("option", { key: v, value: v }, l)))) : null,
 			field("并发上限", h("input", { className: "sap-inp sap-inp-num", value: limit, onChange: (e) => setLimit(e.target.value) })),
-		),
-		h("div", { className: "sap-advrow" },
 			field("二进制路径", h("input", { className: "sap-inp sap-inp-wide", value: binary, placeholder: "留空 = 自动检测", onChange: (e) => setBinary(e.target.value) })),
-			h("button", { className: "sap-bkbtn", onClick: probe, disabled: busy }, "探测模型"),
-			h("button", { className: "sap-bkbtn sap-primary", onClick: save, disabled: busy }, "保存"),
-			msg ? h("span", { className: "sap-sethint" }, msg) : null,
 		),
 		models.length ? h("div", { className: "sap-sethint" }, `可选模型（${models.length}）：${models.slice(0, 12).join(" / ")}${models.length > 12 ? " …" : ""}`) : null,
 	);
@@ -458,8 +461,10 @@ function Backends({ connection }) {
 				h("div", { className: "sap-setlab" },
 					h("span", { className: "sap-link", onClick: () => setExpanded(expanded === it.name ? "" : it.name) },
 						`${expanded === it.name ? "▾" : "▸"} `, h("b", null, it.name)),
-					it.guide ? h("div", { className: "sap-sethint" }, it.guide) : null),
+					it.guide ? h("div", { className: "sap-sethint" }, it.guide) : null,
+					it.configured && !it.enabled ? h("div", { className: "sap-sethint" }, "已停用；模型、强度、并发等设置保留") : null),
 				h("div", { className: "sap-setctl" },
+					it.installed ? h("span", { className: "sap-detected" }, "已检测到") : null,
 					expanded === it.name ? h("span", { className: "sap-sethint" }, "参数见下方") : null,
 					h("button", {
 						className: "sap-pill" + (it.enabled ? " sap-on" : ""),
@@ -497,12 +502,20 @@ function Settings({ connection }) {
 	const [note, setNote] = React.useState("");
 	const runs = snap.runs || [];
 	const stats = statsOf(runs);
+	// 与 host 的协议对齐:一次改一个 key,发 {key,value};恢复默认发 {reset:true}。
 	const persist = async (patch) => {
 		try {
-			await rpc(connection, "panel", patch);
-			const next = { ...overrides };
-			for (const key of Object.keys(patch)) if (key !== "reset") delete next[key];
-			writeOverrides(next);
+			if (patch.reset === true) {
+				await rpc(connection, "panel", { reset: true });
+				writeOverrides({});
+			} else {
+				for (const [key, value] of Object.entries(patch)) await rpc(connection, "panel", { key, value });
+				const next = { ...overrides };
+				for (const key of Object.keys(patch)) delete next[key];
+				// 恢复默认后旧覆盖若还在会重新压过配置,这里整体清掉。
+				if (Object.keys(next).length === 0) writeOverrides({});
+				else writeOverrides(next);
+			}
 			setNote("");
 		} catch (error) {
 			const next = { ...overrides };
@@ -530,29 +543,39 @@ function Settings({ connection }) {
 			onClick: () => persist({ [key]: cast ? cast(value) : value }),
 		}, label)));
 	return h("div", { className: "sap-settings" },
-		h(Backends, { connection }),
-		h("div", { className: "sap-stats" },
-			h("span", null, `总计 ${stats.total}`),
-			h("span", null, `运行 ${stats.running}`),
-			h("span", null, `完成 ${stats.completed}`),
-			h("span", null, `出错 ${stats.error}`),
-			cfg.showCost ? h("span", null, `成本 $${stats.costUsd.toFixed(4)}`) : null,
+		h("div", { className: "sap-statbar" },
+			h("span", null, "总计 ", h("b", null, stats.total)),
+			h("span", { className: "sap-dotsep" }, "·"),
+			h("span", { className: "sap-run" }, "运行 ", h("b", null, stats.running)),
+			h("span", { className: "sap-dotsep" }, "·"),
+			h("span", { className: "sap-donet" }, "完成 ", h("b", null, stats.completed)),
+			h("span", { className: "sap-dotsep" }, "·"),
+			h("span", { className: "sap-errt" }, "出错 ", h("b", null, stats.error)),
+			cfg.showCost ? h("span", null, `· 成本 $${stats.costUsd.toFixed(4)}`) : null,
 		),
-		group("入口", [
-			row("输入框上方 dock", "有运行或有完成记录时才出现", toggle("dock"), "dock"),
-		]),
-		group("显示", [
-			row("范围", "", seg("scope", [["session", "本会话"], ["all", "全部"]]), "scope"),
-			row("卡片上限", "", seg("maxCards", [["10", "10"], ["20", "20"], ["40", "40"]], Number), "maxCards"),
-			row("完成卡片收起", "", seg("autoHideSeconds", [["0", "不自动"], ["10", "10s"], ["30", "30s"], ["60", "60s"], ["300", "5m"]], Number), "autoHideSeconds"),
-			row("显示成本", "开启后才显示金额；数据来自 CLI 上报", toggle("showCost"), "showCost"),
-		]),
-		group("操作", [
-			row("停止按钮（kill 进程）", "", toggle("allowStop"), "allowStop"),
-		]),
-		group("数据", [
-			row("并入 dsh 内置子代理", "只读、带「内置」标", toggle("includeNative"), "includeNative"),
-		]),
+		h(Backends, { connection }),
+		h("div", { className: "sap-cols" },
+			h("div", { className: "sap-col" },
+				group("入口", [
+					row("输入框上方 dock", "有运行或有完成记录时才出现", toggle("dock"), "dock"),
+					row("「子代理」标签页", "关掉后运行详情只能从 dock 进", toggle("tab"), "tab"),
+				]),
+				group("显示", [
+					row("范围", "", seg("scope", [["session", "本会话"], ["all", "全部"]]), "scope"),
+					row("卡片上限", "", seg("maxCards", [["10", "10"], ["20", "20"], ["40", "40"]], Number), "maxCards"),
+					row("完成卡片收起", "", seg("autoHideSeconds", [["0", "不自动"], ["10", "10s"], ["30", "30s"], ["60", "60s"], ["300", "5m"]], Number), "autoHideSeconds"),
+					row("显示成本", "金额来自 CLI 上报", toggle("showCost"), "showCost"),
+				]),
+			),
+			h("div", { className: "sap-col" },
+				group("操作", [
+					row("停止按钮（kill 进程）", "", toggle("allowStop"), "allowStop"),
+				]),
+				group("数据", [
+					row("并入 dsh 内置子代理", "只读、带「内置」标", toggle("includeNative"), "includeNative"),
+				]),
+			),
+		),
 		note ? h("div", { className: "sap-warn" }, note) : null,
 		h("div", { className: "sap-foot" },
 			h("span", { className: "sap-note" }, "改完立即生效，并写回本插件配置的 panel 节点（cordis.patch.yml）。"),
@@ -601,11 +624,7 @@ const PANEL_STYLE = `
 .sap-detail2 .sap-ev2 { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; opacity: .85; }
 .sap-open2 { border: none; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 12px; padding: 0 3px; cursor: pointer; }
 .sap-open2:hover { color: var(--dsw-alias-brand-primary); }
-.sap-sub { display: flex; align-items: baseline; gap: 6px; margin-top: 2px; color: var(--dsw-alias-label-secondary); font-size: 11px; white-space: nowrap; overflow: hidden; }
-.sap-task { color: var(--dsw-alias-label-primary); overflow: hidden; text-overflow: ellipsis; }
-.sap-act { overflow: hidden; text-overflow: ellipsis; font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; }
-.sap-stalltag { color: #d9a400; font-size: 10px; }
-.sap-cost { margin-left: auto; color: var(--dsw-alias-label-secondary); font-size: 10px; }
+/* 插件页的指路条 + 设置页里的只读原始配置（已随 1.1.24 合并删除，保留占位注释便于追溯） */
 .sap-tab { padding: 12px 16px; font-size: 13px; }
 .sap-tabhead { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
 .sap-tabhead b { font-size: 15px; }
@@ -648,7 +667,20 @@ const PANEL_STYLE = `
 .sap-bkbtn { font-size: 11.5px; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--dsw-alias-border-l2); background: transparent; color: var(--dsw-alias-label-primary); cursor: pointer; }
 .sap-bkbtn:hover { background: var(--dsw-alias-bg-overlay); }
 .sap-bkbtn.sap-primary { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 45%, transparent); color: var(--dsw-alias-brand-primary); }
-/* 「运行 / 设置」子页切换 */
+/* 设置页：统计条、两列分组、后端徽标、高级参数块 */
+.sap-statbar { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; height: 32px; padding: 0 12px; margin: 2px 0 10px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-secondary); font-size: 11.5px; }
+.sap-statbar b { color: var(--dsw-alias-label-primary); font-variant-numeric: tabular-nums; margin-left: 4px; }
+.sap-statbar .sap-dotsep { color: var(--dsw-alias-border-l3); }
+.sap-donet { color: #7cbc8e; }
+.sap-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 26px; }
+.sap-col { min-width: 0; }
+.sap-detected { color: var(--dsw-alias-label-secondary); font-size: 10px; opacity: .8; }
+.sap-advhead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sap-advlab { font-size: 11.5px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.sap-advlab span { font-weight: 400; color: var(--dsw-alias-label-secondary); margin-left: 6px; }
+.sap-advact { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.sap-fields { display: grid; grid-template-columns: 1.15fr .8fr .6fr 1.5fr; gap: 9px; align-items: end; }
+
 .sap-subtabs { display: inline-flex; border: 1px solid var(--dsw-alias-border-l2); border-radius: 7px; overflow: hidden; margin: 2px 0 6px; }
 .sap-subtab { border: none; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 12px; padding: 4px 14px; cursor: pointer; }
 .sap-subtab-on { background: color-mix(in srgb, var(--dsw-alias-brand-primary) 16%, transparent); color: var(--dsw-alias-brand-primary); }
@@ -695,11 +727,38 @@ export function registerPanel(ctx) {
 		order: 40,
 		label: () => "子代理",
 	}, (props) => h(Tab, { connection: connection(), sessionId: props?.sessionId ?? props?.session?.id ?? null, hooks: props })));
-	// 管理界面只放一处:设置侧边栏的「子代理」分区;插件页保留 dsh 自动生成的原始配置表单作兜底。
-	ctx.slots.inject("settings.section", () => ctx.slots.register({
-		name: "settings.section",
-		id: "subagent-run-panel",
-		order: 17,
+	// 打开本插件在「插件」页的详情(唯一管理入口)。
+	const openManage = () => {
+		try {
+			ctx.get("pluginNavigation")?.openBundle?.("dsh-subagent");
+		} catch {}
+	};
+	// 输入框卡片正上方的常驻条：这个槽位自带 session 作用域与 props.sessionId。
+	ctx.slots.inject("conversation.input.dock", () => ctx.slots.register({
+		name: "conversation.input.dock",
+		id: "subagent-run-dock",
+		order: 40,
+	}, (props) => h(Dock, {
+		connection: connection(),
+		sessionId: props?.sessionId ?? props?.session?.id ?? null,
+		hooks: props,
+		onOpenTab: openTab,
+	})));
+	ctx.slots.inject("conversation.view", () => ctx.slots.register({
+		name: "conversation.view",
+		id: "subagent-run-tab",
+		order: 40,
 		label: () => "子代理",
+	}, (props) => h(Tab, {
+		connection: connection(),
+		sessionId: props?.sessionId ?? props?.session?.id ?? null,
+		hooks: props,
+		onOpenManage: openManage,
+	})));
+	// 管理界面只放一处:「插件」页里本插件的详情区(plugins.bundle.config)。
+	// 设置页不再单独开分区,避免同一插件出现两个入口。
+	ctx.slots.inject("plugins.bundle.config", () => ctx.slots.register({
+		name: "plugins.bundle.config",
+		key: "dsh-subagent",
 	}, () => h(Settings, { connection: connection() })));
 }
