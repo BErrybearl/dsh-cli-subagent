@@ -1,5 +1,26 @@
 # 本分支的改动
 
+本分支 = `dsh-subagent` 的社区增强分支，**2.0.0 起更名 `dsh-cli-subagent`**（内部插件 id 仍是 `subagent-cli`）。
+与上游的逐版差异按版本倒序列在下面。
+
+## 2.0.0（未发布）
+
+- **改名为 `dsh-cli-subagent`**：npm 上 `dsh-subagent` 已被他人占位 0.0.1、`dsh-subagent-plus` 被他人占用 0.0.3，
+  沿用旧名会让插件管理器把别人的包当成我们的新版，误报「可更新」。包名、GitHub 仓库名一并改为 `dsh-cli-subagent`，
+  内部插件 id 仍为 `subagent-cli`，配置节点改为 `dsh-cli-subagent`。
+- **适配 dsh 0.2.2-rc.2**：`engines.dsh` 与 peer 依赖下限提到 `>=0.2.2-rc.1 <0.3.0`，不再兼容更早的 dsh。
+- **新增 `lib/compat.js` 能力探测**：把对 dsh 内部包的引用（`@deepseek-ai/dsh-tools` 的 `defineTool`、
+  `dsh-llm` 的 `createUserMessage` / `boundContextSummary`、`dsh-tool-subagent`、`dsh-session` 的 `SessionId`）
+  收口成 try/catch 探测；缺包或缺导出时只降级对应功能并打一行 `[dsh-subagent] compat: ...` 警告，
+  插件本体仍能加载。`apply` 启动时跑一次服务探测，缺什么在控制台说明。
+- **内置子代理显示真实名字与耗时**：`runs` 路由新增 `natives` 字段，名字取自 `subagentCatalog`（v3 起条目带 `name`），
+  耗时由 `subagentTiming` 的 `settledMs` 与 `active.through - active.since` 算出，并带 `activity` / `live` /
+  `turnRunning` / `elapsedMs`；投影读不到时返回 null 占位而不报错，每次最多 200 条。
+- **新增 `native-interrupt` 路由**：`{sessionId}` → `ctx.get('subagents').interrupt(id, {kind:'user'})`，
+  内置子代理也能从面板中断；当前 dsh 没有该服务时返回 `{ok:false,error:'unsupported'}`，界面按不支持处理。
+- **`scan` 加缓存与快速模式**：结果缓存 60 秒，`refresh:true` 或 `?refresh=1` 强制重扫；
+  `fast:true` 只查 PATH 与已知固定路径，不进用户 bin 与 npm 目录，供只想快速拿到结果的调用方使用。
+
 ## 1.1.26（未发布）
 
 - **管理面板搬到「设置 → 子代理」**：`settings.section`（id `qoder-subagent`、order 17、label「子代理」）成为唯一管理入口；

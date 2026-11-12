@@ -49,22 +49,120 @@ function rpc(connection, endpoint, payload, timeout = 20000) {
 	});
 }
 
-function useRuns(connection, intervalMs) {
-	const [snap, setSnap] = React.useState({ runs: [], stats: null, cfg: null, now: Date.now() });
-	React.useEffect(() => {
-		if (!connection) return;
-		let alive = true;
-		let timer = null;
-		const poll = async () => {
-			try {
-				const next = await rpc(connection, "runs", { limit: 40 });
-				if (alive && next) setSnap(next);
-			} catch {}
+/** 轮询节奏：有运行中 2s，全空闲 6s，页面不可见 12s（后台不跟着刷新）。 */
+const POLL_ACTIVE = 2000;
+const POLL_IDLE = 6000;
+const POLL_HIDDEN = 12000;
+/** 中断成功后本地乐观标记的有效期：超时还报运行中就撤销，界面如实回到「运行中」。 */
+const INTERRUPT_GRACE_MS = 10000;
+
+/**
+ * panel/runs 的共享 store：dock、标签页、设置页订阅同一份快照，
+ * 全插件只有一个计时器；订阅者归零就停表。
+ */
+function createRunsStore() {
+	let snapshot = { runs: [], natives: [], stats: null, cfg: null, now: Date.now() };
+	const subs = new Set();
+	let timer = null;
+	// 每次 stop / 重排都 +1；在飞的 loop 拿旧值对不上就不再排下一次，计时器不会复活或翻倍。
+	let epoch = 0;
+	let pulling = false;
+	let getConnection = () => null;
+	// 中断成功的本地标记：投影/中断回执有延迟，靠这里先按已结束显示。
+	const interrupted = new Map();
+
+	const emit = () => {
+		for (const cb of subs) {
+			try { cb(snapshot); } catch {}
+		}
+	};
+	const allRows = () => [...(snapshot.runs || []), ...(snapshot.natives || [])];
+	const busy = () => allRows().some((run) => run.status === "running" || run.activity === "running");
+	const hidden = () => typeof document !== "undefined" && document.visibilityState !== "visible";
+	const delay = () => (hidden() ? POLL_HIDDEN : busy() ? POLL_ACTIVE : POLL_IDLE);
+	const pull = async () => {
+		const connection = getConnection();
+		if (!connection || pulling) return;
+		pulling = true;
+		try {
+			const next = await rpc(connection, "runs", { limit: 40 });
+			if (next) {
+				snapshot = next;
+				const now = Date.now();
+				// host 已经报结束的行，撤掉本地乐观标记；一直报运行中的超时也撤掉，别把界面锁在「已取消」。
+				for (const run of allRows()) if (run.status !== "running" && run.activity !== "running") interrupted.delete(run.id);
+				for (const [id, at] of interrupted) if (now - at > INTERRUPT_GRACE_MS) interrupted.delete(id);
+				emit();
+			}
+		} catch {
+			// 拉取失败保留上一份快照，界面不闪空。
+		} finally {
+			pulling = false;
+		}
+	};
+	/** 排下一次拉取：始终先撤掉已有计时器，保证同一时刻只有一个。 */
+	const schedule = (ms) => {
+		if (timer) clearTimeout(timer);
+		epoch += 1;
+		const gen = epoch;
+		timer = setTimeout(() => {
+			timer = null;
+			loop(gen);
+		}, ms);
+	};
+	const loop = async (gen) => {
+		await pull();
+		// 订阅者已归零，或期间被 stop / reschedule 作废：到此为止，不再排计时器。
+		if (subs.size === 0 || gen !== epoch) return;
+		schedule(delay());
+	};
+	// 可见性变化或节奏变化时重排下一次拉取(立即拉一次)。
+	const reschedule = () => {
+		if (subs.size === 0) return;
+		schedule(0);
+	};
+	const stop = () => {
+		epoch += 1;
+		if (timer) clearTimeout(timer);
+		timer = null;
+		if (typeof document !== "undefined") document.removeEventListener("visibilitychange", reschedule);
+	};
+	const subscribe = (cb) => {
+		subs.add(cb);
+		if (subs.size === 1) {
+			if (typeof document !== "undefined") document.addEventListener("visibilitychange", reschedule);
+			schedule(0);
+		}
+		// 新订阅者先拿到手上的快照，不必等下一轮。
+		cb(snapshot);
+		return () => {
+			if (!subs.delete(cb)) return;
+			if (subs.size === 0) stop();
 		};
-		poll();
-		timer = setInterval(poll, intervalMs || 2000);
-		return () => { alive = false; if (timer) clearInterval(timer); };
-	}, [connection, intervalMs]);
+	};
+	/** 中断成功后记一个乐观标记并换快照引用触发重渲染；行的显示由 applyInterrupt 叠加。 */
+	const markInterrupted = (id) => {
+		const at = Date.now();
+		interrupted.set(id, at);
+		snapshot = { ...snapshot, now: at };
+		emit();
+	};
+	return {
+		configure: (getter) => { getConnection = getter; },
+		get: () => snapshot,
+		interruptedAt: (id) => interrupted.get(id) ?? null,
+		subscribe,
+		markInterrupted,
+	};
+}
+
+/** 全插件唯一的 runs 数据源；组件里不要再建第二个。 */
+const runsStore = createRunsStore();
+
+/** 订阅共享快照，卸载即退订（只改局部 state，适配 React 18 并发渲染）。 */
+function useRuns() {
+	const [snap, setSnap] = React.useState(() => runsStore.get());
+	React.useEffect(() => runsStore.subscribe(setSnap), []);
 	return snap;
 }
 
@@ -97,7 +195,77 @@ function fmtDur(ms) {
 }
 const STATUS = { running: ["运行中", "#d9a400"], completed: ["完成", "#3f9d5a"], error: ["出错", "#e5533c"], aborted: ["已取消", "#8a8a8a"] };
 function statusOf(run) { return STATUS[run.status] || ["…", "#8a8a8a"]; }
-function modelText(run) { return run.native ? "dsh 内置" : (run.model || "CLI 默认"); }
+function modelText(run) { return run.native ? (run.name || "dsh 内置") : (run.model || "CLI 默认"); }
+/** 内置行的活动状态：host 给了 activity 就用，缺失时按 status 推断，界面不出现 undefined。 */
+function activityOf(run) {
+	if (!run?.native) return "";
+	if (run.activity === "running" || run.activity === "inactive") return run.activity;
+	return run.status === "running" ? "running" : "inactive";
+}
+/** 状态点/状态字颜色：内置行运行中沿用运行色，已结束时出错仍标红，其余灰。 */
+function dotColor(run) {
+	const activity = activityOf(run);
+	if (activity === "running") return STATUS.running[1];
+	if (activity === "inactive") return run.status === "error" ? STATUS.error[1] : "#8a8a8a";
+	return statusOf(run)[1];
+}
+/** 耗时列：内置行优先用 host 的 elapsedMs，缺值显示占位而不是 undefined。 */
+function elapsedText(run) {
+	if (run.native) {
+		if (typeof run.elapsedMs === "number" && Number.isFinite(run.elapsedMs)) return fmtDur(run.elapsedMs);
+		if (activityOf(run) === "running") return fmtDur(Date.now() - (run.startedAt || 0));
+		return "—";
+	}
+	return run.status === "running" ? fmtDur(Date.now() - (run.startedAt || 0)) : fmtDur((run.endedAt || 0) - (run.startedAt || 0));
+}
+/** 该行是不是在跑；内置行还要看 activity，host 的 status 可能滞后。 */
+function runningRow(run) {
+	return Boolean(run) && (run.status === "running" || activityOf(run) === "running");
+}
+/**
+ * 内置行能不能给「中断」：在跑，且 host 没明说回合已收盘。
+ * turnRunning=false 是「会话还活着但回合已结束」，这种行不给按钮，避免对已结束的行一直显示中断。
+ */
+function interruptible(run) {
+	return Boolean(run?.native) && activityOf(run) === "running" && run.turnRunning !== false;
+}
+/**
+ * 内置子代理行：host 的 runs.natives 优先（name/activity/elapsedMs 更全，id 与中断接口同一套），
+ * 客户端投影算出来的 nativeRunsFrom 只在 host 那一份为空时兜底，两份不并列显示。
+ */
+function nativeRows(snap, projected, scope, sessionId) {
+	const rows = Array.isArray(snap?.natives) && snap.natives.length ? snap.natives : (projected || []);
+	if (scope === "all") return rows;
+	if (!sessionId) return [];
+	return rows.filter((run) => run.parentId === sessionId);
+}
+/** 内置行可能同时来自 host 快照和客户端投影，按 id 去重，host 那份优先。 */
+function withNative(external, natives) {
+	if (!natives || natives.length === 0) return external;
+	const seen = new Set(external.map((run) => run.id));
+	return [...external, ...natives.filter((run) => !seen.has(run.id))];
+}
+/** 中断成功后投影还没跟上的短暂窗口里，界面先按已结束显示该行；超过宽限期就如实回到运行中。 */
+function applyInterrupt(run) {
+	const at = runsStore.interruptedAt(run.id);
+	if (!at || Date.now() - at > INTERRUPT_GRACE_MS) return run;
+	if (!runningRow(run)) return run;
+	return {
+		...run,
+		status: "aborted",
+		activity: "inactive",
+		endedAt: at,
+		elapsedMs: typeof run.elapsedMs === "number" ? run.elapsedMs : run.startedAt ? Math.max(0, at - run.startedAt) : null,
+	};
+}
+/** 中断 dsh 内置子代理；host 用值的 ok 字段表示是否真的停了，拿不到明确 ok 也算失败。 */
+function interruptNative(connection, sessionId) {
+	return rpc(connection, "native-interrupt", { sessionId }).then((value) => {
+		if (!value || value.ok === false) throw new Error(value?.error || "中断失败");
+		runsStore.markInterrupted(sessionId);
+		return value;
+	});
+}
 function statsOf(runs) {
 	const out = { total: runs.length, running: 0, completed: 0, error: 0, aborted: 0, costUsd: 0 };
 	for (const run of runs) {
@@ -146,17 +314,23 @@ function nativeRunsFrom(snap, sessionId, scopeAll) {
 			const timing = bySession[item.id]?.values?.subagentTiming ?? row.projections?.subagentTiming;
 			const active = timing?.active;
 			const running = row.running === true || Boolean(active && active.through == null);
-			const settled = typeof timing?.settledMs === "number" ? timing.settledMs : 0;
+			const settled = typeof timing?.settledMs === "number" ? timing.settledMs : null;
 			const startedAt = typeof item.createdAt === "number" ? item.createdAt : 0;
+			const endedAt = running ? null : (typeof row.updatedAt === "number" ? row.updatedAt : startedAt + (settled ?? 0));
 			out.push({
 				id: item.id,
+				// 真实子代理名：投影里有就用，没有回退到占位文案。
+				name: item.name || item.agentName || null,
+				activity: running ? "running" : "inactive",
+				// 运行中不给 elapsedMs，交给界面按 startedAt 实时算；结束的按 settledMs。
+				elapsedMs: running ? null : (settled ?? (startedAt && endedAt ? Math.max(0, endedAt - startedAt) : null)),
 				provider: "dsh 内置",
 				driver: item.mode || "",
 				label: item.label || row.displayTitle || row.projectionValues?.title || row.title || item.id,
 				model: null,
 				status: running ? "running" : "completed",
 				startedAt,
-				endedAt: running ? null : (typeof row.updatedAt === "number" ? row.updatedAt : startedAt + settled),
+				endedAt,
 				costUsd: null,
 				native: true,
 				stalled: false,
@@ -193,12 +367,14 @@ function useActivity(connection, runId, enabled) {
 	return run;
 }
 
-function Card({ connection, run, onStop, stopEnabled, showCost, expanded, onToggle }) {
-	const [, col] = statusOf(run);
+function Card({ connection, run, onStop, onInterrupt, stopEnabled, showCost, expanded, onToggle }) {
+	const dot = dotColor(run);
 	const running = run.status === "running";
 	const cost = typeof run.costUsd === "number" && run.costUsd > 0 ? `$${run.costUsd.toFixed(4)}` : "—";
 	const effort = run.effort && run.effort !== "auto" ? run.effort : "—";
 	const canStop = running && stopEnabled && !run.native;
+	// 内置子代理不杀进程，走 dsh 自己的中断；只要还在跑就给按钮（host 说回合已收盘就不给）。
+	const canInterrupt = interruptible(run);
 	const detail = useActivity(connection, run.id, expanded);
 	// 单行卡片,固定列宽:金额和停止位始终占位,缺值时也不让右侧漂移;点击整行就地展开详情。
 	return h("div", {
@@ -207,13 +383,16 @@ function Card({ connection, run, onStop, stopEnabled, showCost, expanded, onTogg
 		onClick: onToggle,
 	},
 		h("div", { className: "sap-row" + (showCost ? "" : " sap-nocost") },
-			h("span", { className: "sap-dot" + (run.stalled ? " sap-stall" : ""), style: { background: run.stalled ? "#d9a400" : col } }),
+			h("span", { className: "sap-dot" + (run.stalled ? " sap-stall" : ""), style: { background: run.stalled ? "#d9a400" : dot } }),
 			h("span", { className: "sap-agent", title: run.provider || "" }, run.provider || "?"),
 			h("span", { className: "sap-model", title: modelText(run) }, modelText(run)),
-			h("span", { className: "sap-effort", title: run.native ? "dsh 自带的子代理" : `强度 ${effort}` }, run.native ? "内置" : effort),
-			h("span", { className: "sap-time" }, running ? fmtDur(Date.now() - (run.startedAt || 0)) : fmtDur((run.endedAt || 0) - (run.startedAt || 0))),
+			h("span", { className: "sap-effort", title: run.native ? `${activityOf(run) === "running" ? "运行中" : "已结束"}的 dsh 自带子代理` : `强度 ${effort}` }, run.native ? "内置" : effort),
+			h("span", { className: "sap-time" }, elapsedText(run)),
 			showCost ? h("span", { className: "sap-cost", title: cost === "—" ? "该 CLI 未上报金额" : "成本按 CLI 上报" }, cost) : null,
-			h("span", { className: "sap-act" }, canStop ? h("button", { className: "sap-x", title: "停止该子代理", onClick: (e) => { e.stopPropagation(); onStop(run.id); } }, "停止") : null),
+			h("span", { className: "sap-act" },
+				canInterrupt ? h("button", { className: "sap-x", title: "中断该内置子代理", onClick: (e) => { e.stopPropagation(); onInterrupt?.(run.id); } }, "中断")
+					: canStop ? h("button", { className: "sap-x", title: "停止该子代理", onClick: (e) => { e.stopPropagation(); onStop(run.id); } }, "停止")
+						: null),
 		),
 		expanded ? h("div", { className: "sap-detail2" },
 			h("div", null, h("b", null, "任务 "), run.label || run.prompt || "—"),
@@ -229,29 +408,42 @@ function Dock({ connection, sessionId, hooks, onOpenTab }) {
 	const [hideAt, setHideAt] = React.useState(readHideAt);
 	const [open, setOpen] = React.useState(false);
 	const [pinned, setPinned] = React.useState(null);
-	const [natives, setNatives] = React.useState([]);
-	const snap = useRuns(connection, 2000);
+	const [projected, setProjected] = React.useState([]);
+	const [stopError, setStopError] = React.useState("");
+	const snap = useRuns();
 	const [cfg] = useCfg(snap);
 	const external = scopedRuns(snap.runs || [], cfg, sessionId);
-	const all = cfg.includeNative ? [...external, ...natives] : external;
+	// host 的 natives 优先；只有 host 没给行时才用客户端投影（projected）。
+	const all = withNative(external, cfg.includeNative ? nativeRows(snap, projected, cfg.scope, sessionId) : []).map(applyInterrupt);
 	// ✕ 隐藏整条 dock:只显示点击之后新开始的运行,旧记录不会把它顶回来。
 	const visible = all.filter((run) => (run.startedAt || 0) > hideAt);
 	const stats = statsOf(visible);
 	const now = Date.now();
 	const autoHide = Math.max(0, Number(cfg.autoHideSeconds) || 0);
-	const active = visible.filter((run) => run.status === "running");
-	const recent = visible.filter((run) => run.status !== "running" && !run.restored && !run.native && autoHide > 0 && (now - (run.endedAt || 0)) < autoHide * 1000);
+	const active = visible.filter((run) => runningRow(run));
+	const recent = visible.filter((run) => !runningRow(run) && !run.restored && !run.native && autoHide > 0 && (now - (run.endedAt || 0)) < autoHide * 1000);
 	const shown = [...active, ...recent].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0)).slice(0, Math.max(1, Number(cfg.maxCards) || 20));
 	const prevActive = React.useRef(0);
 	React.useEffect(() => {
 		if (active.length > prevActive.current) setOpen(true);
 		prevActive.current = active.length;
 	}, [active.length]);
+	// 中断失败提示过几秒自己消失，不长期占着 dock。
+	React.useEffect(() => {
+		if (!stopError) return;
+		const t = setTimeout(() => setStopError(""), 8000);
+		return () => clearTimeout(t);
+	}, [stopError]);
 	if (!cfg.dock) return null;
 	if (cfg.scope === "session" && !sessionId) return null;
 	// 没有可显示的内容就整条不出现,新建会话不再顶一条空的。
 	if (shown.length === 0) return null;
 	const onStop = (id) => { rpc(connection, "stop", { runId: id }).catch(() => {}); };
+	// 内置子代理的中断：失败时在 dock 里留一行提示，不静默吞掉。
+	const onInterrupt = (id) => {
+		setStopError("");
+		interruptNative(connection, id).catch((error) => setStopError(`中断失败：${String(error?.message ?? error).slice(0, 80)}`));
+	};
 	const dismiss = () => {
 		const at = Date.now();
 		setHideAt(at);
@@ -265,7 +457,7 @@ function Dock({ connection, sessionId, hooks, onOpenTab }) {
 	if (stats.error) summary.push(h("span", { key: "e", className: "sap-errt" }, `· ${stats.error} 出错`));
 	if (cfg.showCost && stats.costUsd > 0) summary.push(h("span", { key: "$", className: "sap-mut" }, `· $${stats.costUsd.toFixed(4)}`));
 	return h(React.Fragment, null,
-		cfg.includeNative ? h(NativeProbe, { hooks, sessionId, scopeAll: cfg.scope === "all", onData: setNatives }) : null,
+		cfg.includeNative && !(snap.natives && snap.natives.length) ? h(NativeProbe, { hooks, sessionId, scopeAll: cfg.scope === "all", onData: setProjected }) : null,
 		h("div", { className: "sap-dock" + (open && shown.length ? "" : " sap-fold") },
 			h("div", { className: "sap-head" },
 				shown.length ? h("span", { className: "sap-care" + (open ? " sap-open" : ""), onClick: () => setOpen((o) => !o), title: open ? "收起" : "展开" }, "▸") : h("span", { className: "sap-care" }, "·"),
@@ -276,11 +468,13 @@ function Dock({ connection, sessionId, hooks, onOpenTab }) {
 				onOpenTab && sessionId && cfg.tab ? h("button", { className: "sap-open2", title: "在「子代理」页查看全部", onClick: () => onOpenTab(sessionId) }, "↗") : null,
 				h("button", { className: "sap-close", title: "隐藏这一行（新运行会再出现）", onClick: dismiss }, "✕"),
 			),
+			stopError ? h("div", { className: "sap-warn", style: { padding: "0 9px 6px" } }, stopError) : null,
 			open && shown.length ? h("div", { className: "sap-cards" }, shown.map((run) => h(Card, {
 				key: run.id,
 				connection,
 				run,
 				onStop,
+				onInterrupt,
 				stopEnabled: cfg.allowStop,
 				showCost: cfg.showCost,
 				expanded: pinned === run.id,
@@ -292,20 +486,32 @@ function Dock({ connection, sessionId, hooks, onOpenTab }) {
 
 function Tab({ connection, sessionId, hooks }) {
 	const [sel, setSel] = React.useState(null);
-	const [natives, setNatives] = React.useState([]);
+	const [projected, setProjected] = React.useState([]);
+	const [stopError, setStopError] = React.useState("");
 	const [, setTick] = React.useState(0);
 	React.useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 1000); return () => clearInterval(t); }, []);
-	const snap = useRuns(connection, 2000);
+	const snap = useRuns();
 	const [cfg] = useCfg(snap);
+	// 中断失败提示过几秒自己消失。
+	React.useEffect(() => {
+		if (!stopError) return;
+		const t = setTimeout(() => setStopError(""), 8000);
+		return () => clearTimeout(t);
+	}, [stopError]);
 	if (!cfg.tab) return null;
 	const external = scopedRuns(snap.runs || [], cfg, sessionId);
-	const runs = (cfg.includeNative ? [...external, ...natives] : external).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
+	const runs = withNative(external, cfg.includeNative ? nativeRows(snap, projected, cfg.scope, sessionId) : []).map(applyInterrupt).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
 	const stats = statsOf(runs);
 	const max = Math.max(1, Number(cfg.maxCards) || 20);
 	const onStop = (id) => { rpc(connection, "stop", { runId: id }).catch(() => {}); };
+	// 内置子代理的中断：失败时留在表头上方，不静默。
+	const onInterrupt = (id) => {
+		setStopError("");
+		interruptNative(connection, id).catch((error) => setStopError(`中断失败：${String(error?.message ?? error).slice(0, 80)}`));
+	};
 	const selRun = sel ? runs.find((r) => r.id === sel) : null;
 	return h("div", { className: "sap-tab" },
-		cfg.includeNative ? h(NativeProbe, { hooks, sessionId, scopeAll: cfg.scope === "all", onData: setNatives }) : null,
+		cfg.includeNative && !(snap.natives && snap.natives.length) ? h(NativeProbe, { hooks, sessionId, scopeAll: cfg.scope === "all", onData: setProjected }) : null,
 		h("div", { className: "sap-tabhead" },
 			h("b", null, "子代理"),
 			h("span", { className: "sap-stat" }, `总计 ${stats.total}`),
@@ -316,20 +522,26 @@ function Tab({ connection, sessionId, hooks }) {
 			h("span", { className: "sap-scope" }, cfg.scope === "session" ? "本会话" : "全部会话"),
 			h("span", { className: "sap-scope" }, "管理后端：设置 → 子代理"),
 		),
+		stopError ? h("div", { className: "sap-warn" }, stopError) : null,
 		runs.length === 0
 			? h("div", { className: "sap-empty" }, cfg.scope === "session" && !sessionId ? "等待会话加载…" : "暂无子代理运行记录。")
 			: h("table", { className: "sap-table" },
 				h("thead", null, h("tr", null, ["Agent", "模型", "状态", "耗时", "任务", ""].map((x, i) => h("th", { key: i }, x)))),
 				h("tbody", null, runs.slice(0, max).map((run) => {
-					const [st, col] = statusOf(run);
-					const running = run.status === "running";
+					const [st] = statusOf(run);
+					const col = dotColor(run);
+					const running = runningRow(run);
+					const canInterrupt = interruptible(run);
 					return h("tr", { key: run.id, className: "sap-tr", onClick: () => setSel(sel === run.id ? null : run.id) },
-						h("td", null, h("b", null, run.provider || "?"), run.native ? h("span", { className: "sap-native", title: "dsh 自带的子代理，只读" }, "内置") : null),
+						h("td", null, h("b", null, run.provider || "?"), run.native ? h("span", { className: "sap-native", title: run.name ? `dsh 自带子代理：${run.name}` : "dsh 自带的子代理" }, "内置") : null),
 						h("td", null, h("span", { className: "sap-model" }, modelText(run))),
 						h("td", null, h("span", { style: { color: col, fontWeight: 600 } }, st)),
-						h("td", null, running ? fmtDur(Date.now() - (run.startedAt || 0)) : fmtDur((run.endedAt || 0) - (run.startedAt || 0))),
+						h("td", null, elapsedText(run)),
 						h("td", { className: "sap-celltask" }, run.label || run.prompt || ""),
-						h("td", null, running && cfg.allowStop && !run.native ? h("button", { className: "sap-x", onClick: (e) => { e.stopPropagation(); onStop(run.id); } }, "停止") : null),
+						h("td", null,
+							canInterrupt ? h("button", { className: "sap-x", title: "中断该内置子代理", onClick: (e) => { e.stopPropagation(); onInterrupt(run.id); } }, "中断")
+								: running && cfg.allowStop && !run.native ? h("button", { className: "sap-x", onClick: (e) => { e.stopPropagation(); onStop(run.id); } }, "停止")
+									: null),
 					);
 				})),
 			),
@@ -632,7 +844,7 @@ function Backends({ connection }) {
 
 /** 设置侧边栏「子代理」分区：入口 / 显示 / 操作 / 数据 + 统计 + 恢复默认。 */
 function Settings({ connection }) {
-	const snap = useRuns(connection, 4000);
+	const snap = useRuns();
 	const [cfg, overrides] = useCfg(snap);
 	const [note, setNote] = React.useState("");
 	const runs = snap.runs || [];
@@ -844,6 +1056,8 @@ export function registerPanel(ctx) {
 		return () => tag.remove();
 	}, "dsh-subagent: panel styles");
 	const connection = () => ctx.get("connection");
+	// 共享 store 自己拉数据，连接在每次拉取时再取（注入时机不确定）。
+	runsStore.configure(connection);
 	// 「↗」用 dsh 自己的会话视图绑定切到本插件的标签页(与我们注册的 id 一致)。
 	const openTab = (sessionId) => {
 		try {

@@ -1,7 +1,7 @@
 {
-  "name": "dsh-subagent",
-  "version": "1.1.26",
-  "description": "把本机外部 CLI（Codex、Pi、Qoder、OpenCode、CodeBuddy 等）注册成 dsh 子代理，带运行面板与后端管理；dsh-subagent 的社区增强分支。",
+  "name": "dsh-cli-subagent",
+  "version": "2.0.0",
+  "description": "把本机外部 CLI（Codex、Pi、Qoder、OpenCode、CodeBuddy 等）注册成 dsh 子代理，带运行面板、内置子代理观测与后端管理；dsh-subagent 的社区增强分支。",
   "type": "module",
   "main": "./lib/index.js",
   "exports": {
@@ -34,6 +34,7 @@
   },
   "keywords": [
     "dsh-plugin",
+    "dsh-cli-subagent",
     "dsh-subagent",
     "deepseek-harness",
     "subagent",
@@ -55,15 +56,15 @@
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0",
-    "dsh": ">=0.2.1-rc.2 <0.3.0"
+    "dsh": ">=0.2.2-rc.1 <0.3.0"
   },
   "peerDependencies": {
-    "@deepseek-ai/dsh-session": ">=0.2.1-rc.2 <0.3.0",
-    "@deepseek-ai/dsh-subagent": ">=0.2.1-rc.2 <0.3.0",
-    "@deepseek-ai/dsh-tool-subagent": ">=0.2.1-rc.2 <0.3.0",
-    "@deepseek-ai/dsh-tools": ">=0.2.1-rc.2 <0.3.0",
+    "@deepseek-ai/dsh-session": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-subagent": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-tool-subagent": ">=0.2.2-rc.1 <0.3.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.2-rc.1 <0.3.0",
     "@deepseek-ai/schemastery": "^3.18.2",
-    "@deepseek-ai/dsh-llm": ">=0.2.1-rc.2 <0.3.0"
+    "@deepseek-ai/dsh-llm": ">=0.2.2-rc.1 <0.3.0"
   },
   "devDependencies": {
     "esbuild": "^0.25.0",

@@ -704,6 +704,32 @@ function QoderToolView({ block, connection }) {
 	);
 }
 
+/**
+ * 设置侧边栏「子代理」那一行的图标：一个主节点向两个子节点分叉。
+ * 与 host 其他设置行同款——细线、currentColor、按传入的 size 缩放（默认 16）。
+ */
+function SectionIcon(props) {
+	const size = Number(props?.size) > 0 ? Number(props.size) : 16;
+	return h("svg", {
+		width: size,
+		height: size,
+		viewBox: "0 0 16 16",
+		fill: "none",
+		stroke: "currentColor",
+		strokeWidth: 1.5,
+		strokeLinecap: "round",
+		strokeLinejoin: "round",
+		"aria-hidden": "true",
+		focusable: "false",
+		display: "block",
+	},
+		h("circle", { cx: 8, cy: 3.5, r: 2 }),
+		h("path", { d: "M8 5.5V7.5M4 7.5h8M4 7.5v2M12 7.5v2" }),
+		h("circle", { cx: 4, cy: 11.5, r: 2 }),
+		h("circle", { cx: 12, cy: 11.5, r: 2 }),
+	);
+}
+
 function apply(ctx) {
 	ctx.effect(() => ctx.locale.register(LOCALE_NS, LOCALES), "qoder-subagent: copy");
 	ctx.effect(() => {
@@ -724,6 +750,20 @@ function apply(ctx) {
 		}, QoderToolView));
 	}
 	registerPanel(ctx);
+	// 设置侧边栏「子代理」那一行的图标：slot 按 id 匹配，id 必须与分区一致。
+	// 图标只是装饰，槽位缺失或注册失败都不能影响分区本身。
+	try {
+		ctx.slots.inject("settings.section.icon", () => {
+			try {
+				return ctx.slots.register({ name: "settings.section.icon", id: "qoder-subagent", order: 17 }, SectionIcon);
+			} catch (error) {
+				console.warn("[dsh-subagent] 设置分区图标注册失败，保留默认齿轮", error);
+				return undefined;
+			}
+		});
+	} catch (error) {
+		console.warn("[dsh-subagent] settings.section.icon 槽位不可用，保留默认齿轮", error);
+	}
 }
 
 export { apply, inject, name };
