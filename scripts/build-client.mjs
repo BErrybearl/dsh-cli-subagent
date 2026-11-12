@@ -1,6 +1,11 @@
 import { build } from "esbuild";
 import { readFile, writeFile, rm } from "node:fs/promises";
 
+// 模块 id 必须等于包名：dsh 的 client-modules 按包名校验注册项，写死旧名会报
+// 「loaded without registering "<包名>" via __ModuleLoader__.load」。
+const manifest = JSON.parse(await readFile("package.json", "utf8"));
+const moduleId = manifest.name;
+
 await build({
 	entryPoints: ["src/client.js"],
 	outfile: "lib/client.raw.cjs",
@@ -27,7 +32,7 @@ const code = raw
 await writeFile(
 	"lib/client.js",
 	`window.__ModuleLoader__.load({
-	id: "dsh-subagent",
+	id: ${JSON.stringify(moduleId)},
 	factory: (require) => {
 		var module = { exports: {} };
 		(function (module, exports) {

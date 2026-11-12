@@ -1,6 +1,6 @@
 {
   "name": "dsh-cli-subagent",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "把本机外部 CLI（Codex、Pi、Qoder、OpenCode、CodeBuddy 等）注册成 dsh 子代理，带运行面板、内置子代理观测与后端管理；dsh-subagent 的社区增强分支。",
   "type": "module",
   "main": "./lib/index.js",
@@ -35,7 +35,6 @@
   "keywords": [
     "dsh-plugin",
     "dsh-cli-subagent",
-    "dsh-subagent",
     "deepseek-harness",
     "subagent",
     "qoder",
@@ -48,11 +47,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/BErrybearl/dsh-subagent-plus.git"
+    "url": "git+https://github.com/BErrybearl/dsh-cli-subagent.git"
   },
-  "homepage": "https://github.com/BErrybearl/dsh-subagent-plus",
+  "homepage": "https://github.com/BErrybearl/dsh-cli-subagent",
   "bugs": {
-    "url": "https://github.com/BErrybearl/dsh-subagent-plus/issues"
+    "url": "https://github.com/BErrybearl/dsh-cli-subagent/issues"
   },
   "engines": {
     "node": "^22.19.0 || >=24.0.0",

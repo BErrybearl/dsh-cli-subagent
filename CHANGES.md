@@ -3,6 +3,14 @@
 本分支 = `dsh-subagent` 的社区增强分支，**2.0.0 起更名 `dsh-cli-subagent`**（内部插件 id 仍是 `subagent-cli`）。
 与上游的逐版差异按版本倒序列在下面。
 
+## 2.0.1（未发布）
+
+- **修客户端模块 id 与包名不一致导致客户端不加载**：`scripts/build-client.mjs` 里把模块 id 写死成 `dsh-subagent`，
+  改名后 dsh 的 client-modules 按包名 `dsh-cli-subagent` 校验注册项，报
+  `loaded without registering "dsh-cli-subagent" via __ModuleLoader__.load`。现在构建时从 `package.json` 读包名。
+- 同步修掉另外两处写死的旧名：host 插件 `name` 改为按 `package.json` 读取；客户端样式标签的 `data-plugin` 改为新包名。
+- 运行记录目录 `~/.dsh/storages/dsh-subagent/` 保持不变，历史运行记录不丢。
+
 ## 2.0.0（未发布）
 
 - **改名为 `dsh-cli-subagent`**：npm 上 `dsh-subagent` 已被他人占位 0.0.1、`dsh-subagent-plus` 被他人占用 0.0.3，
