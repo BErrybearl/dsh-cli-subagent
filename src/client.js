@@ -620,7 +620,8 @@ function QoderToolView({ block, connection }) {
 
 	const running = Boolean(runId) && (!run || run.status === "running");
 	React.useEffect(() => {
-		if (!runId || !connection) return;
+		// 运行结束(status !== running)后立即停止轮询；已拉到的内容保留在 run 里。
+		if (!runId || !connection || !running) return;
 		let alive = true;
 		const poll = async () => {
 			try {
@@ -634,7 +635,7 @@ function QoderToolView({ block, connection }) {
 			alive = false;
 			clearInterval(timer);
 		};
-	}, [runId, connection]);
+	}, [runId, connection, running]);
 	React.useEffect(() => {
 		if (!running) return;
 		const timer = setInterval(() => setTick((x) => x + 1), 1000);

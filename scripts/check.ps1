@@ -24,8 +24,10 @@ $Root = Get-RepoRoot
 Set-Location -LiteralPath $Root
 
 $script:Failed = 0
+$script:Checks = 0
 function Write-Item {
     param([bool]$Ok, [string]$Label, [string[]]$Detail = @())
+    $script:Checks += 1
     if ($Ok) {
         Write-Host "PASS  $Label"
     } else {
@@ -138,11 +140,26 @@ if (-not (Test-Path -LiteralPath $hookPath -PathType Leaf)) {
 }
 Write-Item -Ok ($dDetail.Count -eq 0) -Label '[d] pre-commit hook calls scripts/check.ps1' -Detail ($dDetail + $dNote)
 
+# ---------------------------------------------------------------- [e]
+$eOk = $true
+$eDetail = @()
+try {
+    $nodeOut = & node scripts/test-retention.mjs 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $eOk = $false
+        $eDetail += ($nodeOut | Select-Object -Last 15)
+    }
+} catch {
+    $eOk = $false
+    $eDetail += "node scripts/test-retention.mjs 执行失败: $_"
+}
+Write-Item -Ok $eOk -Label '[e] retention tests (scripts/test-retention.mjs)' -Detail $eDetail
+
 # ---------------------------------------------------------------- summary
 Write-Host ''
 if ($script:Failed -eq 0) {
-    Write-Host 'CHECK OK (4/4 checks passed)'
+    Write-Host "CHECK OK ($($script:Checks)/$($script:Checks) checks passed)"
     exit 0
 }
-Write-Host "CHECK FAILED ($($script:Failed) of 4 checks failed)"
+Write-Host "CHECK FAILED ($($script:Failed) of $($script:Checks) checks failed)"
 exit 1
