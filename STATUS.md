@@ -2,6 +2,13 @@
 
 ## 当前
 
+- 2.0.4（未发布，分支 `agent/dshcli/p0-hygiene` 待合并）：运行记录资源卫生 P0。
+  ①保留策略：`writeRunIndex` 淘汰旧行时同步删 transcript/prompt/hide；新增 `MAX_RUN_BYTES = 256MB`，
+  超预算按 `endedAt` 旧→新删 transcript（索引行保留、running 跳过）。
+  ②启动只读尾部：completed/error 用 `readTailChunk` 只读末尾约 256KB、最多 60 事件，不再从头 fold；running 仍按 offset 增量。
+  ③轮询收敛：`QoderToolView` settle 即停；`activity` 事件裁到最近 80 条并带 `eventCount`。
+  ④孤儿清扫：启动一次 + 每 10 分钟，只删不在索引的 `.jsonl/.err.log`。
+  pi-run 外部观测 / 权限默认 / 命名 / UI / engines 均未动；新增 `scripts/test-retention.mjs` 并纳入 `check.ps1`。
 - 2.0.3（未发布）：新增「外部脚本任务」观测——只读 dsh 的 `jobs` 服务，把命令行含匹配关键字的后台任务
   （默认 `pi-run.ps1`）映射成面板行，与插件自身运行混排；新增面板开关 `includeExternal`（默认开）与
   `externalMatch`（默认 `pi-run.ps1`，可改）；`stop` 路由支持 `ext:` 前缀，转调 `jobs.kill`。

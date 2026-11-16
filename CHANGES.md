@@ -3,6 +3,21 @@
 本分支 = `dsh-subagent` 的社区增强分支，2.0.2 起 npm 包名为 `dsh-cli-hub`。
 与上游的逐版差异按版本倒序列在下面。
 
+## 2.0.4（未发布）
+
+- **运行记录保留策略（资源卫生 P0）**：`writeRunIndex` 淘汰旧行时，连带删除该运行的 `<id>.jsonl`、`<id>.err.log`、
+  `prompt` 与 `hide.json`；新增总量预算 `MAX_RUN_BYTES = 256MB`，超出时按 `endedAt` 从旧到新删除 transcript，
+  **索引行保留、事件清空、running 的运行跳过**。此前只删 prompt/hide，`.jsonl`/`.err.log` 从不清理。
+- **启动恢复只读尾部**：completed / error 的运行不再从文件头 `foldRunLog` 全量解析，改用 `readTailChunk` 只读
+  文件末尾约 256KB（对齐到首个换行），最多保留最近 60 条事件；只有 running 的运行才按原 offset 增量继续。
+  恢复后的内存事件数不随历史日志变大。
+- **轮询收敛**：`QoderToolView` 的轮询 effect 增加 `running` 依赖，`status !== running` 时立即停止轮询（已拉到的
+  内容保留）；`activity` 路由把返回事件裁剪为最近 80 条并保留全量 `eventCount`，避免每次轮询拉全部事件。
+- **孤儿清扫**：runs 目录里 basename 不在索引中的 `.jsonl` / `.err.log` 会被删除——启动时跑一次，之后每 10 分钟一次；
+  不动 `index.json`、`*.tmp`、prompt、hide。
+- 明确未动：`pi-run.ps1` 外部脚本观测（P1）、`permissionMode` 默认、命名/id、UI 结构、engines 范围。
+- 老 index 行缺新字段时照常读取。
+
 ## 2.0.3（未发布）
 
 - **新增「外部脚本任务」观测**：dsh 主控有时不调用本插件的委派工具，而是用 `pwsh` 跑脚本（如 WorkHub 的
