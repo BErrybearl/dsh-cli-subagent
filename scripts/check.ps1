@@ -173,6 +173,15 @@ try {
 } catch { $gOk = $false; $gDetail += "node scripts/test-gate-alive.mjs 执行失败: $_" }
 Write-Item -Ok $gOk -Label '[g] gate-alive tests (scripts/test-gate-alive.mjs)' -Detail $gDetail
 
+# ---------------------------------------------------------------- [h]
+$hOk = $true
+$hDetail = @()
+try {
+    $nodeOut = & node scripts/test-project-rules.mjs 2>&1
+    if ($LASTEXITCODE -ne 0) { $hOk = $false; $hDetail += ($nodeOut | Select-Object -Last 15) }
+} catch { $hOk = $false; $hDetail += "node scripts/test-project-rules.mjs 执行失败: $_" }
+Write-Item -Ok $hOk -Label '[h] project-rules tests (scripts/test-project-rules.mjs)' -Detail $hDetail
+
 # ---------------------------------------------------------------- summary
 Write-Host ''
 if ($script:Failed -eq 0) {

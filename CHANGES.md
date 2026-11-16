@@ -9,10 +9,10 @@
 - **P1-2 默认超时**：`timeoutSeconds` 默认改为 **1800 秒**，`0` 表示不限；超时沿用现有 killTree / error / `timed out after Ns`。`allowedWaitSeconds`（等首事件）不变。
 - **P1-3 睡眠恢复锁**：`shared-gate` 的存活判据改为**以 pid 存活为主**（进程挂起时 mtime 会过期但 pid 仍在，旧 30 秒心跳逻辑会误回收导致并发超限），mtime 仅作辅助并加 **12 小时**硬上限防 PID 复用永久占位。
 - **P1-4 外部观测收敛**：`panel.includeExternal` **默认由开改为关**（已显式 `true` 的配置不受影响）；显示名改用 `job.label`（去扩展名/截断），不再解析 `-Task/-Model/-Thinking`，模型与强度留空；`externalRowsFor` 有 parentId 只扫该会话、无 parentId 时最多扫最近 5 个 live 会话并缓存 5 秒，`externalJobOwnerOf` 同范围。
-- **P1-5 项目规则提醒（治理）**：新增全局配置 `projectRules: "auto" | "off"`（默认 `auto`）。委派 cwd 或其上级存在 `AGENTS.md` 时，在发给子代理的 prompt 最前面加一行环境说明（权限档位 + 遵守该目录 AGENTS.md：改动走独立分支/worktree、按路径提交、不合并主分支、不推送），只加这一行、不改正文；activity 记 `项目规则: 已注入/无`。
+- **P1-5 项目规则提醒（治理）**：新增全局配置 `projectRules: "auto" | "off"`（默认 `auto`）。委派 cwd 或其上级存在 `AGENTS.md` 时，在发给子代理的 prompt 最前面加一行环境说明（权限档位 + 遵守该目录 AGENTS.md：改动走独立分支/worktree、按路径提交、不合并主分支、不推送），只加这一行、不改正文；**cwd 省略/为空时回退宿主 `process.cwd()`**（工具不传 cwd 时子进程即按宿主 cwd 启动），保证最常见场景也注入；activity 记 `项目规则: 已注入/无`。
 - **P2-6 命名**：设置分区 `settings.section` 的 id 统一为 `dsh-cli-hub`（代码此前已用该 id，本次把 README/docs 里的旧 `qoder-subagent` 引用一并同步）。**未改** CSS 类名、localStorage 键、config 节点 id。
-- **P2-7 UI 面收敛**：新增 panel 配置 `showTab`（默认 `false`），控制会话里是否注册「子代理」Tab；dock 保留、Tab 未注册时 dock 的 ↗ 隐藏；设置页保留。`showTab` 变更后需重载插件生效。
-- 明确未动：权限以外的其它默认值只在上面注明处变更；老配置缺新字段时按上述默认值走、不报错。新增 `scripts/test-permission-map.mjs`、`scripts/test-gate-alive.mjs`，与 `scripts/test-retention.mjs` 一并纳入 `scripts/check.ps1`。
+- **P2-7 UI 面收敛**：新增 panel 配置 `showTab`（默认 `false`），控制会话里是否注册「子代理」Tab；dock 保留、Tab 未注册时 dock 的 ↗ 隐藏；设置页保留。`showTab` 变更后需重载插件生效。**`panel.tab` 退役，由 `panel.showTab` 取代（默认关）**；老配置里残留的 `tab` 键忽略、不报错。
+- 明确未动：权限以外的其它默认值只在上面注明处变更；老配置缺新字段时按上述默认值走、不报错。新增 `scripts/test-permission-map.mjs`、`scripts/test-gate-alive.mjs`、`scripts/test-project-rules.mjs`，与 `scripts/test-retention.mjs` 一并纳入 `scripts/check.ps1`。
 
 ## 2.0.4（未发布）
 

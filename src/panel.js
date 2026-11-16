@@ -10,7 +10,6 @@ const h = React.createElement;
 
 const DEFAULTS = {
 	dock: true,
-	tab: true,
 	showTab: false,
 	scope: "session",
 	autoHideSeconds: 30,
