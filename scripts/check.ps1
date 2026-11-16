@@ -155,6 +155,24 @@ try {
 }
 Write-Item -Ok $eOk -Label '[e] retention tests (scripts/test-retention.mjs)' -Detail $eDetail
 
+# ---------------------------------------------------------------- [f]
+$fOk = $true
+$fDetail = @()
+try {
+    $nodeOut = & node scripts/test-permission-map.mjs 2>&1
+    if ($LASTEXITCODE -ne 0) { $fOk = $false; $fDetail += ($nodeOut | Select-Object -Last 15) }
+} catch { $fOk = $false; $fDetail += "node scripts/test-permission-map.mjs 执行失败: $_" }
+Write-Item -Ok $fOk -Label '[f] permission map tests (scripts/test-permission-map.mjs)' -Detail $fDetail
+
+# ---------------------------------------------------------------- [g]
+$gOk = $true
+$gDetail = @()
+try {
+    $nodeOut = & node scripts/test-gate-alive.mjs 2>&1
+    if ($LASTEXITCODE -ne 0) { $gOk = $false; $gDetail += ($nodeOut | Select-Object -Last 15) }
+} catch { $gOk = $false; $gDetail += "node scripts/test-gate-alive.mjs 执行失败: $_" }
+Write-Item -Ok $gOk -Label '[g] gate-alive tests (scripts/test-gate-alive.mjs)' -Detail $gDetail
+
 # ---------------------------------------------------------------- summary
 Write-Host ''
 if ($script:Failed -eq 0) {

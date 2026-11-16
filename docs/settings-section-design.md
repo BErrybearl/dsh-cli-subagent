@@ -8,7 +8,7 @@
 
 | 项目 | 决定 | 验收标准 |
 | --- | --- | --- |
-| 设置入口 | `settings.section`；id 复用 `qoder-subagent`，中文 label thunk `() => "子代理"`，建议 `order: 17` | 账户 -10 → 插件 15 → 子代理 17 → 智能体预设 20；插件只注册一处分区 |
+| 设置入口 | `settings.section`；id 用 `dsh-cli-hub`，中文 label thunk `() => "子代理"`，建议 `order: 17` | 账户 -10 → 插件 15 → 子代理 17 → 智能体预设 20；插件只注册一处分区 |
 | 唯一管理位置 | 删除完整 `plugins.bundle.config` 注册，推荐不留插件自定义配置区 | 插件详情无第二份管理表单 |
 | Tab | 只保留运行视图；去掉「管理」按钮，换成纯文字「管理后端：设置 → 子代理」 | 无不可用的设置跳转按钮，不调用 shell 内部 openSection |
 | 后端列表 | `configured ∪ detected`，详见第 4 节 | 空安装不出现七个未安装条目；旧配置不丢失、不隐藏 |
@@ -230,7 +230,7 @@ Windows npm 已知包白名单：`@openai/codex`、`@anthropic-ai/claude-code`�
 
 ### 5.3 新增两个只读 RPC
 
-所有路由仍是认证桥下的 POST `/api/qoder-subagent/<endpoint>`，继续使用现有 `{type,rpcId,result}` 信封。下面列的是客户端解包后的 payload/value。
+所有路由仍是认证桥下的 POST `/api/dsh-cli-hub/<endpoint>`，继续使用现有 `{type,rpcId,result}` 信封。下面列的是客户端解包后的 payload/value。
 
 **`discover`**：请求 `{ force: true }`；响应示例（字段必须固定）：
 
@@ -345,7 +345,7 @@ flowchart LR
 registerPanel(ctx); // 样式、Dock、运行 Tab；不再注册完整插件页配置
 ctx.slots.inject("settings.section", () => ctx.slots.register({
   name: "settings.section",
-  id: "qoder-subagent",
+  id: "dsh-cli-hub",
   order: 17,
   label: () => "子代理",
 }, (owner) => h(SettingsSection, {
@@ -366,7 +366,7 @@ ctx.slots.inject("settings.section", () => ctx.slots.register({
 6. `scheduleMode`、`statusListLimit` 及高级超时/权限字段没有被本次新 UI 重设，继续由现有配置加载；不为它们另开页面。完整原始配置仍是配置文件，本轮不再引入第三份只读 JSON 表单。
 7. panel 九个字段与 localStorage override key 均保持；schema 叶子保持 volatile，不能把 panel 外层对象标 volatile。无需 panel.hideMissing：隐藏未检测项是本版产品定义，不是用户可关掉的偏好。
 8. 写回目标是当前运行 profile 的插件 entry，由 configEditor.edit 定位。仓库 `cordis.patch.yml` 是分发模板；不能为了保存开关去修改仓库文件，也不能把真实 paths 带入公开仓库。
-9. npm 包名 `dsh-subagent`、内部路由 `qoder-subagent`、preset id 与发布方式均不变。新增 `lib/*.js` 已在 package.json 的 files 范围内，仍须核对打包清单包含新 helper。
+9. npm 包名 `dsh-subagent`、内部路由 `dsh-cli-hub`、preset id 与发布方式均不变。新增 `lib/*.js` 已在 package.json 的 files 范围内，仍须核对打包清单包含新 helper。
 
 ## 8. 风险、发现方法与回退动作
 

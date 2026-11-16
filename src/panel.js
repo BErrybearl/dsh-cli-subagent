@@ -11,6 +11,7 @@ const h = React.createElement;
 const DEFAULTS = {
 	dock: true,
 	tab: true,
+	showTab: false,
 	scope: "session",
 	autoHideSeconds: 30,
 	maxCards: 20,
@@ -18,7 +19,7 @@ const DEFAULTS = {
 	includeNative: false,
 	hideWhenIdle: false,
 	showCost: false,
-	includeExternal: true,
+	includeExternal: false,
 	externalMatch: "pi-run.ps1",
 };
 const HIDE_KEY = "dsh-cli-hub.panel.hideAt";
@@ -467,7 +468,7 @@ function Dock({ connection, sessionId, hooks, onOpenTab }) {
 				...summary,
 				h("span", { className: "sap-sp" }),
 				h("span", { className: "sap-scope" }, cfg.scope === "session" ? "本会话" : "全部"),
-				onOpenTab && sessionId && cfg.tab ? h("button", { className: "sap-open2", title: "在「子代理」页查看全部", onClick: () => onOpenTab(sessionId) }, "↗") : null,
+				onOpenTab && sessionId && cfg.showTab ? h("button", { className: "sap-open2", title: "在「子代理」页查看全部", onClick: () => onOpenTab(sessionId) }, "↗") : null,
 				h("button", { className: "sap-close", title: "隐藏这一行（新运行会再出现）", onClick: dismiss }, "✕"),
 			),
 			stopError ? h("div", { className: "sap-warn", style: { padding: "0 9px 6px" } }, stopError) : null,
@@ -500,7 +501,7 @@ function Tab({ connection, sessionId, hooks }) {
 		const t = setTimeout(() => setStopError(""), 8000);
 		return () => clearTimeout(t);
 	}, [stopError]);
-	if (!cfg.tab) return null;
+	if (!cfg.showTab) return null;
 	const external = scopedRuns(snap.runs || [], cfg, sessionId);
 	const runs = withNative(external, cfg.includeNative ? nativeRows(snap, projected, cfg.scope, sessionId) : []).map(applyInterrupt).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
 	const stats = statsOf(runs);
@@ -927,7 +928,7 @@ function Settings({ connection }) {
 			h("div", { className: "sap-col" },
 				group("入口", [
 					row("输入框上方 dock", "有运行或有完成记录时才出现", toggle("dock"), "dock"),
-					row("「子代理」标签页", "关掉后运行详情只能从 dock 进", toggle("tab"), "tab"),
+					row("「子代理」标签页", "默认关；开启后会话里才出现该页（改动后重载插件生效）", toggle("showTab"), "showTab"),
 				]),
 				group("显示", [
 					row("范围", "", seg("scope", [["session", "本会话"], ["all", "全部"]]), "scope"),
@@ -1100,7 +1101,9 @@ export function registerPanel(ctx) {
 		hooks: props,
 		onOpenTab: openTab,
 	})));
-	ctx.slots.inject("conversation.view", () => ctx.slots.register({
+	// 「子代理」标签页默认不注册（showTab=false）；开启后会话里才出现该页。
+	// slot 注册是一次性的，故这里读一次 host 配置决定是否注册，改动后需重载插件生效。
+	const registerTab = () => ctx.slots.inject("conversation.view", () => ctx.slots.register({
 		name: "conversation.view",
 		id: "subagent-run-tab",
 		order: 40,
@@ -1110,6 +1113,14 @@ export function registerPanel(ctx) {
 		sessionId: props?.sessionId ?? props?.session?.id ?? null,
 		hooks: props,
 	})));
+	try {
+		const conn = connection();
+		if (conn) {
+			Promise.resolve(rpc(conn, "runs", { limit: 1 }, 8000))
+				.then((snap) => { if (snap?.cfg?.showTab) registerTab(); })
+				.catch(() => {});
+		}
+	} catch {}
 	// 管理界面只放一处:设置侧边栏的「子代理」分区,避免同一插件出现两个入口。
 	ctx.slots.inject("settings.section", () => ctx.slots.register({
 		name: "settings.section",
