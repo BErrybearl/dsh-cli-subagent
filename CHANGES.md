@@ -3,7 +3,7 @@
 本分支 = `dsh-subagent` 的社区增强分支，2.0.2 起 npm 包名为 `dsh-cli-hub`。
 与上游的逐版差异按版本倒序列在下面。
 
-## 2.0.6（未发布，待验收）
+## 2.0.6（已合并 main + tag v2.0.6 并推 GitHub，未发 npm）
 
 - **UI 调整（dock）**：dock 宽度改与输入卡（会话区那一列）一致——用宿主的 `--dsh-composer-side-clearance` / `--dsh-composer-card-max-width` 变量计算宽度并居中；dock 卡片由「单行 + 点击逐项展开」改为两行——上行固定状态列，下行把「任务 / 进度 / 步骤」横向平铺、始终可见；dock 默认展开。不再逐项折叠。
 
