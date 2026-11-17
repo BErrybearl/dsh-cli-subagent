@@ -353,23 +353,7 @@ function NativeProbe({ hooks, sessionId, scopeAll, onData }) {
 	return null;
 }
 
-/** 展开某张卡片时拉取它的实时事件(只在展开期间轮询)。 */
-function useActivity(connection, runId, enabled) {
-	const [run, setRun] = React.useState(null);
-	React.useEffect(() => {
-		if (!enabled || !runId) { setRun(null); return; }
-		let alive = true;
-		const pull = () => rpc(connection, "activity", { runId })
-			.then((v) => { if (alive) setRun(v?.run || null); })
-			.catch(() => {});
-		pull();
-		const timer = setInterval(pull, 2500);
-		return () => { alive = false; clearInterval(timer); };
-	}, [connection, runId, enabled]);
-	return run;
-}
-
-function Card({ connection, run, onStop, onInterrupt, stopEnabled, showCost, expanded, onToggle }) {
+function Card({ run, onStop, onInterrupt, stopEnabled, showCost }) {
 	const dot = dotColor(run);
 	const running = run.status === "running";
 	const cost = typeof run.costUsd === "number" && run.costUsd > 0 ? `$${run.costUsd.toFixed(4)}` : "—";
@@ -377,12 +361,14 @@ function Card({ connection, run, onStop, onInterrupt, stopEnabled, showCost, exp
 	const canStop = running && stopEnabled && !run.native;
 	// 内置子代理不杀进程，走 dsh 自己的中断；只要还在跑就给按钮（host 说回合已收盘就不给）。
 	const canInterrupt = interruptible(run);
-	const detail = useActivity(connection, run.id, expanded);
-	// 单行卡片,固定列宽:金额和停止位始终占位,缺值时也不让右侧漂移;点击整行就地展开详情。
+	const task = run.label || run.prompt || "—";
+	const progress = run.lastEvent ? `${run.lastEvent.kind}: ${run.lastEvent.text}` : "—";
+	const steps = String(run.eventCount || 0);
+	// 两行卡片：上行是固定列宽的状态栏；下行把「任务 / 进度 / 步骤」横向平铺、始终可见，
+	// 不再点击逐项折叠展开。空间主要用于这三列信息，缺值也用占位符保持对齐。
 	return h("div", {
-		className: "sap-card" + (run.status === "error" ? " sap-err" : run.status === "completed" ? " sap-done" : "") + (expanded ? " sap-expanded" : ""),
-		title: expanded ? "点击收起" : (run.label || run.prompt || "(任务)"),
-		onClick: onToggle,
+		className: "sap-card" + (run.status === "error" ? " sap-err" : run.status === "completed" ? " sap-done" : ""),
+		title: task,
 	},
 		h("div", { className: "sap-row" + (showCost ? "" : " sap-nocost") },
 			h("span", { className: "sap-dot" + (run.stalled ? " sap-stall" : ""), style: { background: run.stalled ? "#d9a400" : dot } }),
@@ -396,20 +382,21 @@ function Card({ connection, run, onStop, onInterrupt, stopEnabled, showCost, exp
 					: canStop ? h("button", { className: "sap-x", title: "停止该子代理", onClick: (e) => { e.stopPropagation(); onStop(run.id); } }, "停止")
 						: null),
 		),
-		expanded ? h("div", { className: "sap-detail2" },
-			h("div", null, h("b", null, "任务 "), run.label || run.prompt || "—"),
-			h("div", null, h("b", null, "最近 "), run.lastEvent ? `${run.lastEvent.kind}: ${run.lastEvent.text}` : "—"),
-			(detail?.events || []).slice(-3).map((event, index) => h("div", { key: index, className: "sap-ev2" }, `${event.kind}: ${String(event.text ?? "").slice(0, 160)}`)),
-			h("div", null, h("b", null, "会话 "), run.sessionId || "—", " · ", h("b", null, "步骤 "), String(run.eventCount || 0)),
-		) : null,
+		h("div", { className: "sap-meta" },
+			h("span", { className: "sap-meta-item sap-meta-task", title: task },
+				h("b", { className: "sap-meta-k" }, "任务"), h("span", { className: "sap-meta-v" }, task)),
+			h("span", { className: "sap-meta-item sap-meta-prog", title: progress },
+				h("b", { className: "sap-meta-k" }, "进度"), h("span", { className: "sap-meta-v" }, progress)),
+			h("span", { className: "sap-meta-item sap-meta-steps" },
+				h("b", { className: "sap-meta-k" }, "步骤"), h("span", { className: "sap-meta-v" }, steps)),
+		),
 	);
 }
 
 /** 输入框正上方的常驻条：默认一行显示统计，有新运行自动展开；可收起/隐藏。 */
 function Dock({ connection, sessionId, hooks, onOpenTab }) {
 	const [hideAt, setHideAt] = React.useState(readHideAt);
-	const [open, setOpen] = React.useState(false);
-	const [pinned, setPinned] = React.useState(null);
+	const [open, setOpen] = React.useState(true);
 	const [projected, setProjected] = React.useState([]);
 	const [stopError, setStopError] = React.useState("");
 	const snap = useRuns();
@@ -473,14 +460,11 @@ function Dock({ connection, sessionId, hooks, onOpenTab }) {
 			stopError ? h("div", { className: "sap-warn", style: { padding: "0 9px 6px" } }, stopError) : null,
 			open && shown.length ? h("div", { className: "sap-cards" }, shown.map((run) => h(Card, {
 				key: run.id,
-				connection,
 				run,
 				onStop,
 				onInterrupt,
 				stopEnabled: cfg.allowStop,
 				showCost: cfg.showCost,
-				expanded: pinned === run.id,
-				onToggle: () => setPinned((id) => (id === run.id ? null : run.id)),
 			}))) : null,
 		),
 	);
@@ -956,7 +940,7 @@ function Settings({ connection }) {
 }
 
 const PANEL_STYLE = `
-.sap-dock { margin: 4px 0 2px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); overflow: hidden; font-size: 12px; }
+.sap-dock { box-sizing: border-box; width: calc(100% - var(--dsh-composer-side-clearance, 16px) - var(--dsh-composer-side-clearance, 16px)); max-width: var(--dsh-composer-card-max-width, 100%); margin: 4px auto 2px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); overflow: hidden; font-size: 12px; }
 .sap-head { display: flex; align-items: center; gap: 6px; padding: 4px 9px; user-select: none; }
 .sap-care { display: inline-block; transition: transform .15s; color: var(--dsw-alias-brand-primary); cursor: pointer; width: 10px; }
 .sap-care.sap-open { transform: rotate(90deg); }
@@ -969,7 +953,7 @@ const PANEL_STYLE = `
 .sap-close { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); cursor: pointer; font-size: 11px; line-height: 1; padding: 2px 4px; border-radius: 5px; }
 .sap-close:hover { background: var(--dsw-alias-bg-overlay); color: var(--dsw-alias-label-primary); }
 /* dock 卡片：单列、固定列宽（状态点 / 后端 / 模型 / 强度 / 耗时 / 成本 / 操作），缺值也不让右侧漂移 */
-.sap-cards { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 7px; max-height: 180px; overflow-y: auto; }
+.sap-cards { display: flex; flex-direction: column; gap: 4px; padding: 0 8px 7px; max-height: 240px; overflow-y: auto; }
 .sap-card { border: 1px solid var(--dsw-alias-border-l2); border-left: 2px solid var(--dsw-alias-brand-primary); border-radius: 7px; padding: 1px 8px; background: var(--dsw-alias-bg-layer-2); }
 .sap-card.sap-done { border-left-color: #3f9d5a; }
 .sap-card.sap-err { border-left-color: #e5533c; }
@@ -987,8 +971,16 @@ const PANEL_STYLE = `
 .sap-act { display: flex; justify-content: flex-end; }
 .sap-x { font-size: 10px; line-height: 16px; padding: 0 7px; border-radius: 5px; border: 1px solid color-mix(in srgb, #e5533c 45%, transparent); color: #e5533c; background: transparent; cursor: pointer; white-space: nowrap; }
 .sap-x:hover { background: color-mix(in srgb, #e5533c 10%, transparent); }
-/* 卡片就地展开的详情 */
-.sap-card { cursor: pointer; }
+/* 卡片第二行：任务 / 进度 / 步骤 横向平铺、始终可见，不再逐项折叠 */
+.sap-meta { display: flex; align-items: baseline; gap: 14px; padding: 1px 2px 5px 15px; min-width: 0; color: var(--dsw-alias-label-secondary); font-size: 11px; }
+.sap-meta-item { display: inline-flex; align-items: baseline; gap: 4px; min-width: 0; }
+.sap-meta-k { flex: none; color: var(--dsw-alias-label-primary); font-weight: 600; }
+.sap-meta-v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sap-meta-task { flex: 1 1 0; }
+.sap-meta-prog { flex: 1.6 1 0; }
+.sap-meta-steps { flex: 0 0 auto; }
+.sap-meta-steps .sap-meta-v { font-variant-numeric: tabular-nums; }
+/* 卡片详情已改为第二行平铺展示（.sap-meta），卡片不再整行点击展开 */
 .sap-card.sap-expanded { border-color: color-mix(in srgb, var(--dsw-alias-brand-primary) 42%, transparent); }
 .sap-detail2 { padding: 2px 4px 6px 14px; display: flex; flex-direction: column; gap: 2px; color: var(--dsw-alias-label-secondary); font-size: 11px; overflow-wrap: anywhere; }
 .sap-detail2 b { color: var(--dsw-alias-label-primary); font-weight: 600; margin-right: 2px; }

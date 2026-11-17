@@ -3,6 +3,10 @@
 本分支 = `dsh-subagent` 的社区增强分支，2.0.2 起 npm 包名为 `dsh-cli-hub`。
 与上游的逐版差异按版本倒序列在下面。
 
+## 2.0.6（未发布，待验收）
+
+- **UI 调整（dock）**：dock 宽度改与输入卡（会话区那一列）一致——用宿主的 `--dsh-composer-side-clearance` / `--dsh-composer-card-max-width` 变量计算宽度并居中；dock 卡片由「单行 + 点击逐项展开」改为两行——上行固定状态列，下行把「任务 / 进度 / 步骤」横向平铺、始终可见；dock 默认展开。不再逐项折叠。
+
 ## 2.0.5（已打 tag v2.0.5 并推 GitHub，未发 npm）
 
 - **P1-1 权限透传**：新增后端配置 `permissionMode`（`inherit | bypass_permissions | read-only | workspace-write | danger-full-access`），**默认由 `bypass_permissions` 改为 `inherit`**。inherit 时读父会话 `permissions.currentValue` 投影并映射到各 driver 实际参数：codex `read-only→-s read-only`、`workspace-write→-s workspace-write`、`danger-full-access→--dangerously-bypass-approvals-and-sandbox`；claude `read-only→plan`、`workspace-write→acceptEdits`、`danger-full-access→bypassPermissions`；qoder/codebuddy 按各自取值补这三档；`auto` 按 danger-full-access、`custom` 按 workspace-write。读不到投影/未知预设 → 回退 `bypass_permissions`（保持现状、绝不静默变严）并打一次 `[dsh-cli-hub] compat: permission ...`；pi/opencode 无权限开关，明确忽略并警告一次。activity 记一条 `权限: <值>`。
