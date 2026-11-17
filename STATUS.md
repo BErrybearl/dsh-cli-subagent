@@ -2,7 +2,7 @@
 
 ## 当前
 
-- 2.0.5（未发布，分支 `agent/dshcli/p1p2` 待合并）：P1 四个风险 + 一个治理项 + P2 命名/UI 收敛。
+- 2.0.5（已合并 main + tag v2.0.5 已推 GitHub，未发 npm）：P1 四个风险 + 一个治理项 + P2 命名/UI 收敛。
   ①权限透传：新增后端 `permissionMode`（默认由 `bypass_permissions` 改为 `inherit`），inherit 读父会话 `permissions.currentValue` 映射到 codex/claude/qoder/codebuddy 实际参数，读不到/未知→回退 `bypass_permissions`+警告一次，pi/opencode 忽略并警告，activity 记 `权限: <值>`。
   ②默认超时 `timeoutSeconds=1800`，0 为不限。
   ③并发锁改为 pid 存活为主 + 12 小时硬上限。
@@ -11,7 +11,7 @@
   ⑥设置分区 id 统一 `dsh-cli-hub`（同步 README/docs）。
   ⑦新增 `panel.showTab`（默认 false，控制 Tab 是否注册；dock 保留、Tab 未注册时 ↗ 隐藏）。
   新增 `scripts/test-permission-map.mjs`、`scripts/test-gate-alive.mjs` 并纳入 `check.ps1`。
-- 2.0.4（未发布，分支 `agent/dshcli/p0-hygiene` 待合并）：运行记录资源卫生 P0。
+- 2.0.4（已合并 main + tag v2.0.4 已推 GitHub，未发 npm）：运行记录资源卫生 P0。
   ①保留策略：`writeRunIndex` 淘汰旧行时同步删 transcript/prompt/hide；新增 `MAX_RUN_BYTES = 256MB`，
   超预算按 `endedAt` 旧→新删 transcript（索引行保留、running 跳过）。
   ②启动只读尾部：completed/error 用 `readTailChunk` 只读末尾约 256KB、最多 60 事件，不再从头 fold；running 仍按 offset 增量。
@@ -38,7 +38,7 @@
 - 1.1.25 及以前见 [CHANGES.md](./CHANGES.md)；1.1.13 起委派 label 为「后端名 · 描述」。
 - 已在 WorkHub `05-vibe-coding` 登记为 VC-011（下一号 VC-012）。
 - `node --check lib/index.js` 通过；`node scripts/build-client.mjs` 构建通过（已生成 `lib/client.js`）。
-- 本机 dsh profile 装的是旧名时期的 1.1.25（`github:BErrybearl/dsh-subagent-plus#bddfa7c`）。本机 git 需配代理
+- 本机 desktop profile 已装 2.0.5（`github:BErrybearl/dsh-cli-subagent#v2.0.5`，dsh 自带 pnpm 装进 node_modules）。本机 git 需配代理
   `http(s).proxy=http://127.0.0.1:28080`（pnpm 解析 `github:` 要先 `git ls-remote`），换机器或代理端口变了要同步改。
 
 ## 决定与约束

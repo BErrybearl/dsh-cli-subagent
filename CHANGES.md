@@ -3,7 +3,7 @@
 本分支 = `dsh-subagent` 的社区增强分支，2.0.2 起 npm 包名为 `dsh-cli-hub`。
 与上游的逐版差异按版本倒序列在下面。
 
-## 2.0.5（未发布）
+## 2.0.5（已打 tag v2.0.5 并推 GitHub，未发 npm）
 
 - **P1-1 权限透传**：新增后端配置 `permissionMode`（`inherit | bypass_permissions | read-only | workspace-write | danger-full-access`），**默认由 `bypass_permissions` 改为 `inherit`**。inherit 时读父会话 `permissions.currentValue` 投影并映射到各 driver 实际参数：codex `read-only→-s read-only`、`workspace-write→-s workspace-write`、`danger-full-access→--dangerously-bypass-approvals-and-sandbox`；claude `read-only→plan`、`workspace-write→acceptEdits`、`danger-full-access→bypassPermissions`；qoder/codebuddy 按各自取值补这三档；`auto` 按 danger-full-access、`custom` 按 workspace-write。读不到投影/未知预设 → 回退 `bypass_permissions`（保持现状、绝不静默变严）并打一次 `[dsh-cli-hub] compat: permission ...`；pi/opencode 无权限开关，明确忽略并警告一次。activity 记一条 `权限: <值>`。
 - **P1-2 默认超时**：`timeoutSeconds` 默认改为 **1800 秒**，`0` 表示不限；超时沿用现有 killTree / error / `timed out after Ns`。`allowedWaitSeconds`（等首事件）不变。
@@ -14,7 +14,7 @@
 - **P2-7 UI 面收敛**：新增 panel 配置 `showTab`（默认 `false`），控制会话里是否注册「子代理」Tab；dock 保留、Tab 未注册时 dock 的 ↗ 隐藏；设置页保留。`showTab` 变更后需重载插件生效。**`panel.tab` 退役，由 `panel.showTab` 取代（默认关）**；老配置里残留的 `tab` 键忽略、不报错。
 - 明确未动：权限以外的其它默认值只在上面注明处变更；老配置缺新字段时按上述默认值走、不报错。新增 `scripts/test-permission-map.mjs`、`scripts/test-gate-alive.mjs`、`scripts/test-project-rules.mjs`，与 `scripts/test-retention.mjs` 一并纳入 `scripts/check.ps1`。
 
-## 2.0.4（未发布）
+## 2.0.4（已打 tag v2.0.4 并推 GitHub，未发 npm）
 
 - **运行记录保留策略（资源卫生 P0）**：`writeRunIndex` 淘汰旧行时，连带删除该运行的 `<id>.jsonl`、`<id>.err.log`、
   `prompt` 与 `hide.json`；新增总量预算 `MAX_RUN_BYTES = 256MB`，超出时按 `endedAt` 从旧到新删除 transcript，
