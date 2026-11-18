@@ -558,53 +558,103 @@ const EFFORT_CHOICES = {
 	"codex-json": ["minimal", "low", "medium", "high", "xhigh", "max", "ultra"],
 };
 
-/** 单个后端的高级参数：默认模型 / 强度 / 并发上限 / 二进制路径。 */
+/** 设置页可折叠分区（默认展开/收起由 defaultOpen 决定）。 */
+function Section({ title, hint, defaultOpen = false, children }) {
+	const [open, setOpen] = React.useState(defaultOpen);
+	return h("div", { className: "sap-group" },
+		h("div", {
+			className: "sap-ghead" + (open ? " sap-gopen" : ""),
+			role: "button", "aria-expanded": open ? "true" : "false", tabIndex: 0,
+			onClick: () => setOpen((v) => !v),
+			onKeyDown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((v) => !v); } },
+		},
+			h("span", { className: "sap-gcare" }, open ? "▾" : "▸"),
+			h("b", { className: "sap-gtitle2" }, title),
+			hint ? h("span", { className: "sap-sethint" }, hint) : null),
+		open ? h("div", { className: "sap-gbody" }, children) : null);
+}
+
+/** 后端五态标签（四态 + 检测到未加入）。 */
+const BACKEND_STATES = {
+	available: ["已启用·可用", "sap-badge-ok"],
+	need_login: ["已启用·需登录", "sap-badge-warn"],
+	missing: ["已启用·路径失效", "sap-badge-bad"],
+	disabled: ["已停用", "sap-badge-muted"],
+	detected: ["已检测到·未加入", "sap-badge-muted"],
+};
+function backendStateOf(it) {
+	if (!it.configured) return it.installed ? "detected" : "missing";
+	if (!it.enabled) return "disabled";
+	if (!it.installed) return "missing";
+	if (it.needLogin === true) return "need_login";
+	return "available";
+}
+function StateBadge({ state }) {
+	const [label, cls] = BACKEND_STATES[state] || BACKEND_STATES.disabled;
+	return h("span", { className: "sap-badge " + cls }, label);
+}
+
+/** 单个后端的参数：第一层 默认模型 / 默认强度；第二层「高级」才放 并发 / CLI 路径 / 实际协议。 */
 function BackendAdvanced({ connection, item, onSaved }) {
 	const [model, setModel] = React.useState(item.model || "");
-	const [models, setModels] = React.useState(Array.isArray(item.models) ? item.models : []);
 	const [effort, setEffort] = React.useState(item.reasoningEffort || "auto");
 	const [limit, setLimit] = React.useState(String(item.maxConcurrency || 2));
-	const [binary, setBinary] = React.useState(item.binary || "");
+	// 只把「手动覆盖」回填进输入框；自动检测到的解析路径只作占位提示，避免保存后被固定。
+	const [binary, setBinary] = React.useState(item.binaryOverride || "");
+	const [catalog, setCatalog] = React.useState(Array.isArray(item.models) ? item.models : []);
+	const [showAdv, setShowAdv] = React.useState(false);
 	const [busy, setBusy] = React.useState(false);
 	const [msg, setMsg] = React.useState("");
+	const [err, setErr] = React.useState("");
 	const levels = EFFORT_CHOICES[item.driver] || [];
+	const autoBinary = item.binary || "";
 	const probe = async () => {
-		setBusy(true); setMsg("");
+		setBusy(true); setMsg(""); setErr("");
 		try {
 			const r = await rpc(connection, "probe", { name: item.name });
 			const list = Array.isArray(r?.models) ? r.models : [];
-			setModels(list);
-			setMsg(`检测到 ${list.length} 个模型`);
-		} catch (error) {
-			setMsg(`检测失败：${String(error?.message ?? error).slice(0, 60)}`);
-		} finally { setBusy(false); }
+			setCatalog(list);
+			setMsg(`探测到 ${list.length} 个模型（仅作选择建议，不改默认模型）`);
+		} catch (e) { setErr(`探测失败：${String(e?.message ?? e).slice(0, 80)}`); }
+		finally { setBusy(false); }
 	};
 	const save = async () => {
-		setBusy(true); setMsg("");
+		setBusy(true); setMsg(""); setErr("");
+		// 只发用户真正编辑的字段；不再回传 models，避免「模型目录」压过默认 model。
+		const patch = { model, reasoningEffort: effort, maxConcurrency: Number(limit) || 2, binary };
 		try {
-			await rpc(connection, "backend-config", { name: item.name, patch: { model, models, reasoningEffort: effort, maxConcurrency: Number(limit), binary } });
+			await rpc(connection, "backend-config", { name: item.name, patch });
 			setMsg("已保存");
 			onSaved?.();
-		} catch (error) {
-			setMsg(`保存失败：${String(error?.message ?? error).slice(0, 60)}`);
-		} finally { setBusy(false); }
+		} catch (e) { setErr(`保存失败：${String(e?.message ?? e).slice(0, 80)}`); }
+		finally { setBusy(false); }
 	};
-	const field = (label, control) => h("label", { className: "sap-field" }, h("span", null, label), control);
+	const field = (label, control, hint) => h("label", { className: "sap-field sap-field-col" },
+		h("span", { className: "sap-fieldlab" }, label),
+		control,
+		hint ? h("span", { className: "sap-sethint" }, hint) : null);
 	return h("div", { className: "sap-adv" },
-		h("div", { className: "sap-advhead" },
-			h("div", { className: "sap-advlab" }, `▾ 高级参数 · ${item.name}`, h("span", null, "后端默认配置")),
-			h("div", { className: "sap-advact" },
-				h("button", { className: "sap-bkbtn", onClick: probe, disabled: busy }, "探测模型"),
-				h("button", { className: "sap-bkbtn sap-primary", onClick: save, disabled: busy }, "保存"),
-				msg ? h("span", { className: "sap-sethint" }, msg) : null)),
-		h("div", { className: "sap-fields" },
-			field("默认模型", h("input", { className: "sap-inp", value: model, placeholder: "留空 = CLI 默认", onChange: (e) => setModel(e.target.value) })),
-			levels.length ? field("默认强度", h("select", { className: "sap-inp", value: effort, onChange: (e) => setEffort(e.target.value) },
-				[["auto", "自动"], ...levels.map((x) => [x, x])].map(([v, l]) => h("option", { key: v, value: v }, l)))) : null,
-			field("并发上限", h("input", { className: "sap-inp sap-inp-num", value: limit, onChange: (e) => setLimit(e.target.value) })),
-			field("二进制路径", h("input", { className: "sap-inp sap-inp-wide", value: binary, placeholder: "留空 = 自动检测", onChange: (e) => setBinary(e.target.value) })),
-		),
-		models.length ? h("div", { className: "sap-sethint" }, `可选模型（${models.length}）：${models.slice(0, 12).join(" / ")}${models.length > 12 ? " …" : ""}`) : null,
+		h("div", { className: "sap-advrow" },
+			h("b", { className: "sap-advlab" }, `参数 · ${item.name}`),
+			h("span", { className: "sap-sethint" }, `实际协议：${item.driver}`),
+			h("span", { className: "sap-sp" }),
+			h("button", { className: "sap-bkbtn", onClick: probe, disabled: busy }, "探测模型"),
+			h("button", { className: "sap-bkbtn sap-primary", onClick: save, disabled: busy }, "保存")),
+		h("div", { className: "sap-fields2" },
+			field("默认模型", h("input", { className: "sap-inp", value: model, placeholder: "留空 = CLI 默认", list: `sap-models-${item.name}`, onChange: (e) => setModel(e.target.value) })),
+			levels.length
+				? field("默认思考强度", h("select", { className: "sap-inp", value: effort, onChange: (e) => setEffort(e.target.value) },
+					[["auto", "自动（不指定）"], ...levels.map((x) => [x, x])].map(([v, l]) => h("option", { key: v, value: v }, l))), "只列该后端支持的档位")
+				: field("默认思考强度", h("span", { className: "sap-sethint" }, "该后端不支持强度档位"))),
+		h("datalist", { id: `sap-models-${item.name}` }, catalog.slice(0, 50).map((m) => h("option", { key: m, value: m }))),
+		h("button", { className: "sap-advtoggle", onClick: () => setShowAdv((v) => !v) }, showAdv ? "▾ 收起高级（并发 / CLI 路径 / 协议）" : "▸ 高级（并发 / CLI 路径 / 协议）"),
+		showAdv ? h("div", { className: "sap-fields2" },
+			field("并发上限", h("input", { className: "sap-inp sap-inp-num", value: limit, onChange: (e) => setLimit(e.target.value) }), "该后端同时运行的任务数"),
+			field("CLI 路径", h("input", { className: "sap-inp sap-inp-wide", value: binary, placeholder: autoBinary ? `自动检测：${autoBinary}` : "留空 = 自动检测", onChange: (e) => setBinary(e.target.value) }), autoBinary ? `自动检测值：${autoBinary}（留空即用它，填写则改为手动覆盖）` : "留空 = 自动检测"),
+			field("实际协议", h("input", { className: "sap-inp", value: item.driver, readOnly: true }), "决定启动参数与 JSON 协议，需与 CLI 一致")) : null,
+		catalog.length ? h("div", { className: "sap-sethint" }, `可选模型（${catalog.length}，点默认模型输入框可见建议）：${catalog.slice(0, 12).join(" / ")}${catalog.length > 12 ? " …" : ""}`) : null,
+		msg ? h("div", { className: "sap-sethint" }, msg) : null,
+		err ? h("div", { className: "sap-warn" }, err) : null,
 	);
 }
 
@@ -648,46 +698,33 @@ function checkedNoteOf(value) {
 }
 
 /**
- * 「后端」分组：只渲染 host 返回的条目（本机检测到的 + 已配置的）——
- * 开关、高级参数、搜索本机 CLI 与手动添加都在这里就地展开。
+ * 「我的后端」分区：每行只留 名称 · 状态 · 开关/修复 · ▸；
+ * 停用与路径失效也能展开编辑（不再只有 enabled 才渲染参数）。
+ * 添加后端收进按钮：搜索已安装 CLI 为主操作，手动添加为次操作；候选明确标注「登录与协议待验证」。
  */
 function Backends({ connection }) {
 	const [items, drivers, load] = useBackends(connection);
 	const [expanded, setExpanded] = React.useState("");
-	// pane：当前展开的添加区，同一时间只开一个（"" / "scan" / "manual"）。
-	const [pane, setPane] = React.useState("");
+	const [pane, setPane] = React.useState(""); // "" | "add"
+	const [addMode, setAddMode] = React.useState("scan"); // scan | manual
 	const [scan, setScan] = React.useState({ status: "idle", items: [], error: "", note: "" });
 	const [picked, setPicked] = React.useState({});
 	const [busy, setBusy] = React.useState("");
 	const [form, setForm] = React.useState({ name: "", driver: "", binary: "" });
 	const [checked, setChecked] = React.useState({ status: "idle", text: "" });
 	const [err, setErr] = React.useState("");
-	// 只有「已配置且停用」的才进一键启用；检测到但没加入的不替他写配置。
-	const off = items.filter((it) => it.configured && !it.enabled);
 	const toggle = async (it) => {
 		setErr("");
-		try {
-			await rpc(connection, "backend", { name: it.name, enabled: !it.enabled });
-			load();
-		} catch (error) {
-			setErr(`切换「${it.name}」失败（${String(error?.message ?? error).slice(0, 80)}）。`);
-		}
+		try { await rpc(connection, "backend", { name: it.name, enabled: !it.enabled }); load(); }
+		catch (error) { setErr(`切换「${it.name}」失败（${String(error?.message ?? error).slice(0, 80)}）。`); }
 	};
-	// 一键启用：依次逐个调 backend，避免并发打到 host；全部发完再统一刷新。
-	const enableAll = async () => {
+	const joinDetected = async (it) => {
 		setErr("");
-		try {
-			for (const it of off) await rpc(connection, "backend", { name: it.name, enabled: true });
-			load();
-		} catch (error) {
-			load();
-			setErr(`一键启用中断（${String(error?.message ?? error).slice(0, 80)}），已启用的保持生效。`);
-		}
+		try { await rpc(connection, "backend", { name: it.name, enabled: true }); load(); }
+		catch (error) { setErr(`加入「${it.name}」失败（${String(error?.message ?? error).slice(0, 80)}）。`); }
 	};
-	// 搜索本机 CLI：一次 scan，失败或超时只留一行提示，不弹窗也不会卡住其他控件。
 	const runScan = async () => {
-		setPane("scan");
-		setErr("");
+		setAddMode("scan"); setErr("");
 		setScan({ status: "loading", items: [], error: "", note: "" });
 		try {
 			const value = await rpc(connection, "scan", {}, 15000);
@@ -702,18 +739,15 @@ function Backends({ connection }) {
 		}
 	};
 	const join = async (cand, driver) => {
-		setErr("");
-		setBusy(cand.key);
+		setErr(""); setBusy(cand.key);
 		try {
 			await rpc(connection, "backend", { name: cand.name, driver, binary: cand.path, enabled: true });
-			// 加入成功后从候选里移除，再刷新主列表。
 			setScan((state) => ({ ...state, items: state.items.filter((item) => item.key !== cand.key) }));
 			load();
 		} catch (error) {
 			setErr(`加入「${cand.name}」失败（${String(error?.message ?? error).slice(0, 80)}）。`);
 		} finally { setBusy(""); }
 	};
-	// 检测：把解析出的绝对路径填回路径框，并给一句提示。
 	const checkPath = async () => {
 		setErr("");
 		setChecked({ status: "loading", text: "检测中…" });
@@ -721,7 +755,6 @@ function Backends({ connection }) {
 			const value = await rpc(connection, "backend-check", { name: form.name.trim(), binary: form.binary.trim() }, 15000);
 			const path = checkedPathOf(value);
 			if (path) setForm((current) => ({ ...current, binary: path }));
-			// 用户没选过 driver 时用 host 的建议值，选过的不覆盖。
 			setForm((current) => (current.driver || !value?.driver ? current : { ...current, driver: String(value.driver) }));
 			setChecked({ status: "done", text: checkedNoteOf(value) });
 		} catch (error) {
@@ -742,23 +775,11 @@ function Backends({ connection }) {
 			setErr(`添加「${name}」失败（${String(error?.message ?? error).slice(0, 80)}）。`);
 		}
 	};
-	// 工具栏：搜索本机 CLI（主操作）+ 手动添加，两者互斥展开。
-	const toolbar = h("div", { className: "sap-setrow" },
-		h("div", { className: "sap-setlab" },
-			h("span", { className: "sap-sethint" }, items.length ? `共 ${items.length} 个后端（本机检测到的 + 已配置的）` : "还没发现本机 CLI，先搜索或手动添加")),
-		h("div", { className: "sap-setctl" },
-			h("button", { className: "sap-bkbtn sap-primary", onClick: runScan, disabled: scan.status === "loading" },
-				scan.status === "loading" ? "正在扫描…" : "搜索本机 CLI"),
-			h("button", { className: "sap-bkbtn", onClick: () => { setPane(pane === "manual" ? "" : "manual"); setErr(""); } }, "＋ 手动添加")));
-	const scanPane = pane === "scan" ? h("div", { className: "sap-addform" },
-		h("div", { className: "sap-advrow" },
-			h("b", { className: "sap-advlab" }, "本机搜索"),
-			scan.status === "ready" ? h("span", { className: "sap-sethint" }, `找到 ${scan.items.length} 项可加入`) : null,
-			scan.note ? h("span", { className: "sap-sethint" }, scan.note) : null,
-			h("span", { className: "sap-sp" }),
-			h("button", { className: "sap-bkbtn", onClick: () => setPane("") }, "收起")),
+
+	const scanBlock = h("div", { className: "sap-addbody" },
 		scan.status === "loading" ? h("div", { className: "sap-sethint" }, "正在扫描…") : null,
 		scan.error ? h("div", { className: "sap-warn" }, scan.error) : null,
+		scan.note ? h("div", { className: "sap-sethint" }, scan.note) : null,
 		scan.status === "ready" && scan.items.length === 0 ? h("div", { className: "sap-sethint" }, "没找到还没加入的 CLI") : null,
 		scan.items.map((cand) => {
 			const driver = picked[cand.key] || cand.driver;
@@ -766,16 +787,12 @@ function Backends({ connection }) {
 				h("div", { className: "sap-setlab sap-scanlab" },
 					h("b", null, cand.name),
 					h("div", { className: "sap-scanpath" }, cand.path),
-					cand.driver
-						? h("div", { className: "sap-sethint" }, `建议 driver：${cand.driver}`)
-						: h("div", { className: "sap-sethint" }, "未识别 driver，需手动选择")),
+					h("div", { className: "sap-sethint" },
+						`建议协议：${cand.driver || "需手动选择"} · `,
+						h("span", { className: "sap-badge sap-badge-warn" }, "登录与协议待验证"))),
 				h("div", { className: "sap-setctl" },
-					cand.driver ? null : h("select", {
-						className: "sap-inp",
-						value: picked[cand.key] || "",
-						onChange: (e) => setPicked({ ...picked, [cand.key]: e.target.value }),
-					},
-						h("option", { value: "" }, "选择 driver…"),
+					cand.driver ? null : h("select", { className: "sap-inp", value: picked[cand.key] || "", onChange: (e) => setPicked({ ...picked, [cand.key]: e.target.value }) },
+						h("option", { value: "" }, "选择协议…"),
 						drivers.map((d) => h("option", { key: d, value: d }, d))),
 					h("button", {
 						className: "sap-bkbtn sap-primary",
@@ -784,14 +801,9 @@ function Backends({ connection }) {
 						onClick: () => join(cand, driver),
 					}, busy === cand.key ? "加入中…" : "加入")));
 		}),
-	) : null;
-	// 手动添加：切换 pane 时不清空已输入的内容。
-	const manualPane = pane === "manual" ? h("div", { className: "sap-addform" },
-		h("div", { className: "sap-advrow" },
-			h("b", { className: "sap-advlab" }, "手动添加"),
-			h("span", { className: "sap-sethint" }, "driver 决定启动参数和 JSON 协议，须与 CLI 实际协议一致"),
-			h("span", { className: "sap-sp" }),
-			h("button", { className: "sap-bkbtn", onClick: () => { setPane(""); setErr(""); setChecked({ status: "idle", text: "" }); } }, "取消")),
+	);
+
+	const manualBlock = h("div", { className: "sap-addbody" },
 		h("div", { className: "sap-advrow" },
 			h("input", { className: "sap-inp", placeholder: "名称，如 codebuddy2", value: form.name, onChange: (e) => setForm({ ...form, name: e.target.value }) }),
 			h("select", { className: "sap-inp", value: form.driver || drivers[0] || "", onChange: (e) => setForm({ ...form, driver: e.target.value }) },
@@ -802,51 +814,105 @@ function Backends({ connection }) {
 				value: form.binary,
 				onChange: (e) => { setForm({ ...form, binary: e.target.value }); setChecked({ status: "idle", text: "" }); },
 			}),
-			h("button", { className: "sap-bkbtn", onClick: checkPath, disabled: checked.status === "loading" }, "检测"),
+			h("button", { className: "sap-bkbtn", onClick: checkPath, disabled: checked.status === "loading" }, "检测路径"),
 			h("button", { className: "sap-bkbtn sap-primary", onClick: add }, "添加")),
 		checked.text ? h("div", { className: checked.status === "error" ? "sap-warn" : "sap-sethint" }, checked.text) : null,
+		h("div", { className: "sap-sethint" }, "driver/协议决定启动参数与 JSON 协议，须与 CLI 实际一致；登录与协议在运行时验证。"));
+
+	const addPane = pane === "add" ? h("div", { className: "sap-addform" },
+		h("div", { className: "sap-advrow" },
+			h("b", { className: "sap-advlab" }, "添加后端"),
+			h("span", { className: "sap-sp" }),
+			h("button", { className: "sap-bkbtn", onClick: () => setPane("") }, "收起")),
+		h("div", { className: "sap-advrow" },
+			h("button", { className: "sap-bkbtn sap-primary", onClick: runScan, disabled: scan.status === "loading" }, scan.status === "loading" ? "正在扫描…" : "搜索已安装的 CLI"),
+			h("button", { className: "sap-bkbtn", onClick: () => setAddMode("manual") }, "手动添加")),
+		addMode === "scan" ? scanBlock : manualBlock,
 	) : null;
-	return h("div", { className: "sap-group sap-backends" },
-		h("div", { className: "sap-gtitle" }, "后端"),
-		h("div", { className: "sap-sethint" }, "只列这台机器检测到的和已配置的 CLI；加入、改路径都在这里"),
-		toolbar,
-		scanPane,
-		manualPane,
-		items.map((it) => h(React.Fragment, { key: it.name },
+
+	const rows = items.map((it) => {
+		const state = backendStateOf(it);
+		const openRow = expanded === it.name;
+		const isDetected = state === "detected";
+		return h(React.Fragment, { key: it.name },
 			h("div", { className: "sap-setrow" },
 				h("div", { className: "sap-setlab" },
-					h("span", { className: "sap-link", onClick: () => setExpanded(expanded === it.name ? "" : it.name) },
-						`${expanded === it.name ? "▾" : "▸"} `, h("b", null, it.name)),
-					it.guide ? h("div", { className: "sap-sethint" }, it.guide) : null,
-					it.configured && !it.enabled ? h("div", { className: "sap-sethint" }, "已停用；模型、强度、并发等设置保留") : null),
+					h("span", { className: "sap-link", onClick: () => setExpanded(openRow ? "" : it.name) },
+						`${openRow ? "▾" : "▸"} `, h("b", null, it.name), h("span", { className: "sap-driver" }, it.driver)),
+					state === "disabled" ? h("div", { className: "sap-sethint" }, "已停用；模型、强度、并发等设置保留，仍可展开编辑") : null,
+					state === "missing" ? h("div", { className: "sap-sethint" }, "路径失效；可展开修改 CLI 路径或重新检测") : null,
+					state === "need_login" ? h("div", { className: "sap-sethint" }, "已启用但需登录；登录后重试") : null),
 				h("div", { className: "sap-setctl" },
-					it.installed
-						? h("span", { className: "sap-detected" }, "已检测到")
-						: h("span", { className: "sap-missed" }, "未检测到"),
-					expanded === it.name ? h("span", { className: "sap-sethint" }, "参数见下方") : null,
-					h("button", {
-						className: "sap-pill" + (it.enabled ? " sap-on" : ""),
-						role: "switch", "aria-checked": it.enabled ? "true" : "false",
-						onClick: () => toggle(it),
-					}, h("span")))),
-			expanded === it.name && it.enabled ? h(BackendAdvanced, { connection, item: it, onSaved: load }) : null,
-		)),
-		off.length ? h("div", { className: "sap-setrow" },
-			h("div", { className: "sap-setlab" }),
-			h("div", { className: "sap-setctl" },
-				h("button", { className: "sap-bkbtn", onClick: enableAll }, "一键启用已停用后端")),
-		) : null,
+					h(StateBadge, { state }),
+					isDetected
+						? h("button", { className: "sap-bkbtn sap-primary", onClick: () => joinDetected(it) }, "加入")
+						: h("button", {
+							className: "sap-pill" + (it.enabled ? " sap-on" : ""),
+							role: "switch", "aria-checked": it.enabled ? "true" : "false",
+							onClick: () => toggle(it),
+						}, h("span")),
+					!isDetected ? h("button", { className: "sap-bkbtn", onClick: () => setExpanded(openRow ? "" : it.name) }, openRow ? "收起" : (state === "missing" ? "修复" : "参数")) : null)),
+			openRow ? h(BackendAdvanced, { connection, item: it, onSaved: load }) : null,
+		);
+	});
+
+	return h(Section, {
+		title: "我的后端",
+		hint: items.length ? `共 ${items.length} 个（本机检测到的 + 已配置的）` : "还没发现本机 CLI",
+		defaultOpen: true,
+	},
+		h("div", { className: "sap-toolbar" },
+			h("button", { className: "sap-bkbtn sap-primary", onClick: () => { setPane(pane === "add" ? "" : "add"); setErr(""); } },
+				pane === "add" ? "收起添加" : "＋ 添加后端")),
+		addPane,
+		rows,
 		err ? h("div", { className: "sap-warn" }, err) : null,
 	);
 }
 
-/** 设置侧边栏「子代理」分区：入口 / 显示 / 操作 / 数据 + 统计 + 恢复默认。 */
+/** 状态与诊断里的自检：跑一次 dry-run，显示真实命令行、退出码、首条错误。 */
+function SelfCheck({ connection }) {
+	const [items] = useBackends(connection);
+	const [name, setName] = React.useState("");
+	const [busy, setBusy] = React.useState(false);
+	const [res, setRes] = React.useState(null);
+	const [err, setErr] = React.useState("");
+	const list = items.filter((it) => it.configured);
+	const current = name || list[0]?.name || "";
+	const run = async () => {
+		if (!current) return;
+		setBusy(true); setErr(""); setRes(null);
+		try { setRes(await rpc(connection, "self-check", { name: current }, 20000)); }
+		catch (e) { setErr(`自检失败：${String(e?.message ?? e).slice(0, 100)}`); }
+		finally { setBusy(false); }
+	};
+	const copy = (value) => { try { navigator.clipboard?.writeText(String(value ?? "")); } catch {} };
+	return h("div", { className: "sap-selfcheck" },
+		h("div", { className: "sap-advrow" },
+			h("select", { className: "sap-inp", value: current, onChange: (e) => setName(e.target.value) },
+				list.length ? list.map((it) => h("option", { key: it.name, value: it.name }, it.name)) : h("option", { value: "" }, "（无已配置后端）")),
+			h("button", { className: "sap-bkbtn sap-primary", onClick: run, disabled: busy || !current }, busy ? "自检中…" : "自检")),
+		err ? h("div", { className: "sap-warn" }, err) : null,
+		res ? h("div", { className: "sap-selfcheck-out" },
+			h("div", null, h("b", null, "命令 "), h("code", { className: "sap-code" }, res.command || "—")),
+			h("div", null, h("b", null, "退出码 "), String(res.exitCode ?? "未知"), res.ok ? h("span", { className: "sap-donet" }, " · 可启动") : h("span", { className: "sap-errt" }, " · 有错误")),
+			res.firstError ? h("div", null, h("b", null, "首条错误 "), h("span", { className: "sap-errt" }, res.firstError)) : null,
+			h("div", null, h("button", { className: "sap-bkbtn", onClick: () => copy(res.command) }, "复制命令"))) : null,
+	);
+}
+
+/** 设置侧边栏「子代理」分区：7 个分区（我的后端 / 在哪显示 / 观测范围 / 状态与诊断 / 维护）。 */
 function Settings({ connection }) {
 	const snap = useRuns();
 	const [cfg, overrides] = useCfg(snap);
 	const [note, setNote] = React.useState("");
+	const [showDetails, setShowDetails] = React.useState(false);
+	const [confirmReset, setConfirmReset] = React.useState(false);
+	const [batch, setBatch] = React.useState({ open: false });
+	const [backendItems, , loadBackends] = useBackends(connection);
 	const runs = snap.runs || [];
 	const stats = statsOf(runs);
+	const aborted = runs.filter((r) => r.status === "aborted").length;
 	// 与 host 的协议对齐:一次改一个 key,发 {key,value};恢复默认发 {reset:true}。
 	const persist = async (patch) => {
 		try {
@@ -857,7 +923,6 @@ function Settings({ connection }) {
 				for (const [key, value] of Object.entries(patch)) await rpc(connection, "panel", { key, value });
 				const next = { ...overrides };
 				for (const key of Object.keys(patch)) delete next[key];
-				// 恢复默认后旧覆盖若还在会重新压过配置,这里整体清掉。
 				if (Object.keys(next).length === 0) writeOverrides({});
 				else writeOverrides(next);
 			}
@@ -870,20 +935,24 @@ function Settings({ connection }) {
 		}
 	};
 	const dirty = Object.keys(overrides).filter((key) => key in DEFAULTS);
-	// 外部任务的诊断行:静默失效时也能看出是没开、读不到服务还是关键字没命中。
 	const extInfo = snap.external;
-	const extNote = !extInfo ? "外部任务：未检测"
-		: !extInfo.enabled ? "外部任务：已关闭"
-			: extInfo.reason === "jobs-unavailable" ? "外部任务：当前 dsh 读不到 jobs 服务，此功能不可用"
-				: extInfo.reason === "no-matchers" ? "外部任务：匹配关键字为空，不会显示任何任务"
-					: extInfo.reason === "error" ? "外部任务：读取失败"
-						: `外部任务：本机后台任务 ${extInfo.jobs ?? 0} 个，命中 ${extInfo.matched ?? 0} 个`;
+	const extState = !extInfo ? "unknown"
+		: extInfo.enabled === false ? "off"
+			: extInfo.reason === "jobs-unavailable" ? "unsupported"
+				: extInfo.reason === "error" ? "readfail"
+					: ((extInfo.matched ?? 0) === 0 ? "zero" : "hit");
+	const extLine = {
+		unknown: "外部任务：未检测",
+		off: "外部任务：已关闭",
+		unsupported: "外部任务：当前 dsh 读不到 jobs 服务，此功能不可用",
+		readfail: "外部任务：读取失败",
+		zero: "外部任务：0 命中（检查关键词是否匹配任务标签）",
+		hit: `外部任务：本机后台任务 ${extInfo?.jobs ?? 0} 个，命中 ${extInfo?.matched ?? 0} 个`,
+	}[extState];
 	const row = (label, hint, control, key) => h("div", { className: "sap-setrow" },
 		h("div", { className: "sap-setlab" }, label, hint ? h("div", { className: "sap-sethint" }, hint) : null),
 		h("div", { className: "sap-setctl" }, control),
-		dirty.includes(key) ? h("span", { className: "sap-over", title: "写回配置失败，当前值只在本机生效" }) : null);
-	const group = (title, children) => h("div", { className: "sap-group" },
-		h("div", { className: "sap-gtitle" }, title), children);
+		key && dirty.includes(key) ? h("span", { className: "sap-over", title: "写回配置失败，当前值只在本机生效" }) : null);
 	const toggle = (key) => h("button", {
 		className: "sap-pill" + (cfg[key] ? " sap-on" : ""),
 		role: "switch", "aria-checked": cfg[key] ? "true" : "false",
@@ -895,7 +964,6 @@ function Settings({ connection }) {
 			className: "sap-segbtn" + (String(cfg[key]) === value ? " sap-seg-on" : ""),
 			onClick: () => persist({ [key]: cast ? cast(value) : value }),
 		}, label)));
-	// 文本项：回车或失焦时写回,值没变就不发请求。
 	const text = (key, placeholder) => h("input", {
 		className: "sap-input",
 		defaultValue: cfg[key] ?? "",
@@ -906,48 +974,53 @@ function Settings({ connection }) {
 		},
 		onKeyDown: (event) => { if (event.key === "Enter") event.target.blur(); },
 	});
+	const offBackends = backendItems.filter((it) => it.configured && !it.enabled);
+	const refreshAt = snap.now ? new Date(snap.now).toLocaleTimeString() : "—";
 	return h("div", { className: "sap-settings" },
-		h("div", { className: "sap-statbar" },
-			h("span", null, "总计 ", h("b", null, stats.total)),
-			h("span", { className: "sap-dotsep" }, "·"),
-			h("span", { className: "sap-run" }, "运行 ", h("b", null, stats.running)),
-			h("span", { className: "sap-dotsep" }, "·"),
-			h("span", { className: "sap-donet" }, "完成 ", h("b", null, stats.completed)),
-			h("span", { className: "sap-dotsep" }, "·"),
-			h("span", { className: "sap-errt" }, "出错 ", h("b", null, stats.error)),
-			cfg.showCost ? h("span", null, `· 成本 $${stats.costUsd.toFixed(4)}`) : null,
-		),
-		h("div", { className: "sap-note" }, extNote),
 		h(Backends, { connection }),
-		h("div", { className: "sap-cols" },
-			h("div", { className: "sap-col" },
-				group("入口", [
-					row("输入框上方 dock", "有运行或有完成记录时才出现", toggle("dock"), "dock"),
-					row("「子代理」标签页", "默认关；开启后会话里才出现该页（改动后重载插件生效）", toggle("showTab"), "showTab"),
-				]),
-				group("显示", [
-					row("范围", "", seg("scope", [["session", "本会话"], ["all", "全部"]]), "scope"),
-					row("卡片上限", "", seg("maxCards", [["10", "10"], ["20", "20"], ["40", "40"]], Number), "maxCards"),
-					row("完成卡片收起", "", seg("autoHideSeconds", [["0", "不自动"], ["10", "10s"], ["30", "30s"], ["60", "60s"], ["300", "5m"]], Number), "autoHideSeconds"),
-					row("显示成本", "金额来自 CLI 上报", toggle("showCost"), "showCost"),
-				]),
-			),
-			h("div", { className: "sap-col" },
-				group("操作", [
-					row("停止按钮（kill 进程）", "", toggle("allowStop"), "allowStop"),
-				]),
-				group("数据", [
-					row("并入 dsh 内置子代理", "只读、带「内置」标", toggle("includeNative"), "includeNative"),
-					row("并入外部脚本任务", "如 pwsh 跑 pi-run.ps1 起的 pi；只读，不改你的脚本", toggle("includeExternal"), "includeExternal"),
-					row("外部任务匹配关键字", "逗号分隔，命令行包含任一关键字即算", text("externalMatch", "pi-run.ps1"), "externalMatch"),
-				]),
-			),
-		),
+		h(Section, { title: "在哪显示", defaultOpen: true },
+			row("输入框上方运行条", "有运行或有完成记录时才出现", toggle("dock"), "dock"),
+			row("会话中的「子代理」页", "开启后会话里才出现该页（改动后重载插件生效）", toggle("showTab"), "showTab"),
+			h("button", { className: "sap-advtoggle", onClick: () => setShowDetails((v) => !v) }, showDetails ? "▾ 收起显示细节" : "▸ 显示细节（范围 / 卡片数 / 完成停留 / 成本 / 停止按钮）"),
+			showDetails ? h("div", { className: "sap-gbody" },
+				row("范围", "", seg("scope", [["session", "本会话"], ["all", "全部"]]), "scope"),
+				row("卡片上限", "", seg("maxCards", [["10", "10"], ["20", "20"], ["40", "40"]], Number), "maxCards"),
+				row("完成卡片停留", "0 = 不显示完成卡片", seg("autoHideSeconds", [["0", "不显示"], ["10", "10s"], ["30", "30s"], ["60", "60s"], ["300", "5m"]], Number), "autoHideSeconds"),
+				row("显示成本", "金额来自 CLI 上报，缺报显示 —", toggle("showCost"), "showCost"),
+				row("停止按钮", "对可停止的后端任务显示", toggle("allowStop"), "allowStop")) : null),
+		h(Section, { title: "观测范围", hint: extLine, defaultOpen: false },
+			row("显示 dsh 内置子代理", "只读、带「内置」标", toggle("includeNative"), "includeNative"),
+			row("显示 dsh 后台脚本任务", "如 pwsh 跑 pi-run.ps1 起的 pi；只读，不改你的脚本", toggle("includeExternal"), "includeExternal"),
+			cfg.includeExternal ? row("匹配关键字", `按任务标签子串匹配；当前 ${extInfo?.matched ?? 0} 命中 / ${extInfo?.jobs ?? 0} 个任务`, text("externalMatch", "pi-run.ps1"), "externalMatch") : null,
+			h("div", { className: "sap-sethint" }, extLine)),
+		h(Section, { title: "状态与诊断", hint: "快照 / 自检 / 最近失败", defaultOpen: false },
+			row("快照来源", "运行面板共享的 dsh runs 快照", h("span", { className: "sap-sethint" }, "runs 接口"), ""),
+			row("最后刷新", "", h("span", { className: "sap-sethint" }, refreshAt), ""),
+			row("取消数", "", h("span", { className: "sap-sethint" }, String(aborted)), ""),
+			row("费用", "CLI 未上报时显示 —", h("span", { className: "sap-sethint" }, cfg.showCost ? "已开启" : "未显示"), ""),
+			h(SelfCheck, { connection })),
+		h(Section, { title: "维护", hint: "恢复默认 / 批量启用", defaultOpen: false },
+			confirmReset
+				? h("div", { className: "sap-setrow" },
+					h("div", { className: "sap-setlab" }, "确认恢复面板默认？", h("div", { className: "sap-sethint" }, "只重置显示与观测偏好（dock/Tab/范围/卡片/成本/停止/观测），不动后端。")),
+					h("div", { className: "sap-setctl" },
+						h("button", { className: "sap-bkbtn", onClick: () => setConfirmReset(false) }, "取消"),
+						h("button", { className: "sap-bkbtn sap-primary", onClick: async () => { await persist({ reset: true }); setConfirmReset(false); } }, "确认重置")))
+				: h("div", { className: "sap-setrow" },
+					h("div", { className: "sap-setlab" }, "恢复面板默认", h("div", { className: "sap-sethint" }, "只重置显示与观测偏好，不动后端配置")),
+					h("div", { className: "sap-setctl" }, h("button", { className: "sap-bkbtn", onClick: () => setConfirmReset(true) }, "恢复默认"))),
+			offBackends.length
+				? h("div", { className: "sap-setrow" },
+					h("div", { className: "sap-setlab" }, `批量启用已停用后端（${offBackends.length}）`, h("div", { className: "sap-sethint" }, "受影响：" + offBackends.map((it) => it.name).join(" / "))),
+					h("div", { className: "sap-setctl" },
+						batch.open
+							? h(React.Fragment, null,
+								h("button", { className: "sap-bkbtn", onClick: () => setBatch({ open: false }) }, "取消"),
+								h("button", { className: "sap-bkbtn sap-primary", onClick: async () => { for (const it of offBackends) { try { await rpc(connection, "backend", { name: it.name, enabled: true }); } catch {} } setBatch({ open: false }); loadBackends(); } }, "确认启用全部"))
+							: h("button", { className: "sap-bkbtn", onClick: () => setBatch({ open: true }) }, "批量启用")))
+				: null),
 		note ? h("div", { className: "sap-warn" }, note) : null,
-		h("div", { className: "sap-foot" },
-			h("span", { className: "sap-note" }, "改完立即生效，并写回本插件配置的 panel 节点（cordis.patch.yml）。"),
-			h("button", { className: "sap-reset", onClick: () => persist({ reset: true }) }, "恢复默认"),
-		),
+		h("div", { className: "sap-foot" }, h("span", { className: "sap-note" }, "改完立即生效，并写回本插件配置的 panel 节点（cordis.patch.yml）。")),
 	);
 }
 
@@ -1074,6 +1147,29 @@ const PANEL_STYLE = `
 .sap-inp-num { min-width: 56px; width: 56px; }
 .sap-inp-wide { min-width: 210px; }
 .sap-inp:focus { outline: 1px solid var(--dsw-alias-brand-primary); }
+/* 设置页 7 分区：可折叠标题、状态徽标、自检、两列自适应 */
+.sap-ghead { display: flex; align-items: center; gap: 8px; padding: 10px 0 6px; margin-top: 2px; cursor: pointer; border-bottom: 1px solid var(--dsw-alias-border-l1); user-select: none; }
+.sap-ghead:focus-visible { outline: 1px solid var(--dsw-alias-brand-primary); outline-offset: 2px; }
+.sap-gcare { color: var(--dsw-alias-brand-primary); width: 12px; display: inline-block; }
+.sap-gtitle2 { font-size: 13px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+.sap-gbody { padding: 4px 0; }
+.sap-badge { font-size: 10.5px; line-height: 16px; padding: 0 7px; border-radius: 999px; border: 1px solid transparent; white-space: nowrap; }
+.sap-badge-ok { color: #1a7f4b; background: color-mix(in srgb, #3f9d5a 16%, transparent); border-color: color-mix(in srgb, #3f9d5a 40%, transparent); }
+.sap-badge-warn { color: #8a5a00; background: color-mix(in srgb, #d9a400 16%, transparent); border-color: color-mix(in srgb, #d9a400 40%, transparent); }
+.sap-badge-bad { color: #b42318; background: color-mix(in srgb, #e5533c 16%, transparent); border-color: color-mix(in srgb, #e5533c 40%, transparent); }
+.sap-badge-muted { color: var(--dsw-alias-label-secondary); background: var(--dsw-alias-bg-layer-2); border-color: var(--dsw-alias-border-l2); }
+.sap-driver { font-size: 10px; color: var(--dsw-alias-label-secondary); margin-left: 6px; }
+.sap-toolbar { display: flex; align-items: center; gap: 8px; padding: 6px 0 4px; }
+.sap-addbody { padding: 4px 0 6px; }
+.sap-advtoggle { border: 0; background: transparent; color: var(--dsw-alias-label-secondary); font-size: 11.5px; cursor: pointer; padding: 6px 0 2px; text-align: left; }
+.sap-advtoggle:hover { color: var(--dsw-alias-label-primary); }
+.sap-fields2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 9px; padding: 6px 0; }
+.sap-field-col { flex-direction: column; align-items: stretch; gap: 3px; }
+.sap-fieldlab { font-size: 11px; color: var(--dsw-alias-label-secondary); }
+.sap-selfcheck { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--dsw-alias-border-l2); }
+.sap-selfcheck-out { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--dsw-alias-label-secondary); }
+.sap-code { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; background: var(--dsw-alias-bg-layer-2); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.sap-cols { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
 `;
 
 export function registerPanel(ctx) {
