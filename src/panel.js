@@ -427,7 +427,13 @@ function Dock({ connection, sessionId, hooks, onOpenTab }) {
 	if (cfg.scope === "session" && !sessionId) return null;
 	// 没有可显示的内容就整条不出现,新建会话不再顶一条空的。
 	if (shown.length === 0) return null;
-	const onStop = (id) => { rpc(connection, "stop", { runId: id }).catch(() => {}); };
+	const onStop = (id) => {
+		rpc(connection, "stop", { runId: id }).then((r) => {
+			// 三态回执：只有确认停止才静默；失败/仅请求成功要如实展示，不再一律当成功。
+			if (r?.state === "stop_failed") setStopError(`停止失败：${r.error || "未知原因"}`);
+			else if (r?.state === "stopping") setStopError(`正在停止：${r.error || "进程尚未退出"}`);
+		}).catch((e) => setStopError(`停止失败：${String(e?.message ?? e).slice(0, 80)}`));
+	};
 	// 内置子代理的中断：失败时在 dock 里留一行提示，不静默吞掉。
 	const onInterrupt = (id) => {
 		setStopError("");
@@ -489,7 +495,13 @@ function Tab({ connection, sessionId, hooks }) {
 	const runs = withNative(external, cfg.includeNative ? nativeRows(snap, projected, cfg.scope, sessionId) : []).map(applyInterrupt).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
 	const stats = statsOf(runs);
 	const max = Math.max(1, Number(cfg.maxCards) || 20);
-	const onStop = (id) => { rpc(connection, "stop", { runId: id }).catch(() => {}); };
+	const onStop = (id) => {
+		rpc(connection, "stop", { runId: id }).then((r) => {
+			// 三态回执：只有确认停止才静默；失败/仅请求成功要如实展示，不再一律当成功。
+			if (r?.state === "stop_failed") setStopError(`停止失败：${r.error || "未知原因"}`);
+			else if (r?.state === "stopping") setStopError(`正在停止：${r.error || "进程尚未退出"}`);
+		}).catch((e) => setStopError(`停止失败：${String(e?.message ?? e).slice(0, 80)}`));
+	};
 	// 内置子代理的中断：失败时留在表头上方，不静默。
 	const onInterrupt = (id) => {
 		setStopError("");

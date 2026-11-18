@@ -105,6 +105,24 @@ try {
 	ok(tail.includes("TAIL-END"), "尾部读取包含最新内容");
 	ok(!tail.includes("HEAD"), "尾部读取不含文件头（未从头全量解析）");
 	ok(readBytes < fileSize * 0.2, "读取量远小于文件总量（不被历史拖累）", `${((readBytes / fileSize) * 100).toFixed(1)}%`);
+
+	// --- 5) 活跃项保护：>24 条且含 running，running 不被裁剪/删除 ---
+	const d5 = newDir("active");
+	dirs.push(d5);
+	const am = [];
+	for (let i = 0; i < 28; i += 1) {
+		const id = `a-${String(i).padStart(2, "0")}`;
+		// a-26 位于第 27 条（超过 24 会被裁），标记为 running。
+		const status = i === 26 ? "running" : "completed";
+		am.push({ id, status, startedAt: 1000 + (28 - i), endedAt: status === "running" ? null : 1000 + (28 - i) });
+		writeFileSync(join(d5, `${id}.jsonl`), "{}\n");
+	}
+	const r5 = applyRetention(d5, am, { maxRuns: 24 });
+	const runningMeta = am.find((m) => m.status === "running");
+	ok(r5.kept.includes(runningMeta), "running 行未被淘汰", `kept=${r5.kept.length}`);
+	ok(existsSync(join(d5, `${runningMeta.id}.jsonl`)), "running 的 transcript 未被删除");
+	ok(r5.evicted.some((m) => m.id === "a-27"), "最旧的非 running 项被淘汰", `evicted=${r5.evicted.map((m) => m.id).join(",")}`);
+	ok(r5.kept.filter((m) => m.status !== "running").length <= 24, "非 running 保留数不超过上限");
 } finally {
 	for (const dir of dirs) {
 		try { rmSync(dir, { recursive: true, force: true }); } catch {}

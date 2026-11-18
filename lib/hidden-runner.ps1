@@ -15,12 +15,10 @@ $startParams = @{
     PassThru = $true
 }
 if ($cfg.Arguments) { $startParams.ArgumentList = $cfg.Arguments } else { $startParams.ArgumentList = '' }
-$p = Start-Process @startParams
-$p.WaitForExit()
-for ($i = 0; $i -lt 20; $i++) {
-    if ($null -ne $p.ExitCode) { break }
-    Start-Sleep -Milliseconds 50
-}
+# -Wait is required: without it Start-Process often leaves $p.ExitCode null,
+# and the old code turned null into exit 0 (reporting a failed CLI run as success).
+$p = Start-Process @startParams -Wait
 $code = $p.ExitCode
-if ($null -eq $code) { $code = 0 }
+# Unknown exit code must never be reported as success. 125 = EXIT_CODE_UNKNOWN sentinel.
+if ($null -eq $code) { exit 125 }
 exit $code

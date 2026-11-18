@@ -2,6 +2,7 @@
 import {
 	PERMISSION_MODES,
 	permissionArgs,
+	permissionEnforceError,
 	presetToMode,
 	resolveInheritedMode,
 	supportsPermission,
@@ -23,10 +24,10 @@ eq(presetToMode("danger-full-access"), "danger-full-access", "预设 danger-full
 eq(presetToMode("auto"), "danger-full-access", "预设 auto → danger-full-access");
 eq(presetToMode("custom"), "workspace-write", "预设 custom → workspace-write（保守）");
 
-// 2) 未知 / 空 preset 回退 bypass_permissions
+// 2) 未知 / 空 preset：继承解析返回 null（调用方必须拒绝，fail-closed，绝不回退 bypass）
 eq(presetToMode("weird-preset"), null, "未知预设 → null");
-eq(resolveInheritedMode("weird-preset"), "bypass_permissions", "未知预设 → 回退 bypass_permissions");
-eq(resolveInheritedMode(undefined), "bypass_permissions", "读不到(undefined) → 回退 bypass_permissions");
+eq(resolveInheritedMode("weird-preset"), null, "未知预设 → null（拒绝，不回退 bypass）");
+eq(resolveInheritedMode(undefined), null, "读不到(undefined) → null（拒绝，不回退 bypass）");
 eq(resolveInheritedMode("auto"), "danger-full-access", "auto 继承 → danger-full-access");
 
 // 3) 各 driver 的权限参数（逐 driver 对照实际 CLI 参数）
@@ -49,6 +50,13 @@ eq(supportsPermission("opencode-json"), false, "opencode 无权限开关");
 eq(permissionArgs("pi-json", "read-only"), null, "pi 忽略 read-only");
 eq(permissionArgs("opencode-json", "danger-full-access"), null, "opencode 忽略 danger-full-access");
 eq(supportsPermission("codex-json"), true, "codex 支持权限开关");
+
+// 6) 驱动兑现不了限制 → 明确报错（fail-closed，不能默默放宽）
+eq(typeof permissionEnforceError("pi-json", "read-only"), "string", "pi + read-only → 报错不能兑现");
+eq(typeof permissionEnforceError("opencode-json", "workspace-write"), "string", "opencode + workspace-write → 报错不能兑现");
+eq(permissionEnforceError("pi-json", "bypass_permissions"), null, "pi + bypass（放开档）→ 放行");
+eq(permissionEnforceError("pi-json", "danger-full-access"), null, "pi + danger-full-access（放开档）→ 放行");
+eq(permissionEnforceError("codex-json", "read-only"), null, "codex + read-only → 可兑现");
 
 // 5) 档位常量完整
 eq(PERMISSION_MODES.includes("inherit"), true, "档位表含 inherit");

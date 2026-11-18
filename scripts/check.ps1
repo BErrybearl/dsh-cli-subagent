@@ -182,6 +182,24 @@ try {
 } catch { $hOk = $false; $hDetail += "node scripts/test-project-rules.mjs 执行失败: $_" }
 Write-Item -Ok $hOk -Label '[h] project-rules tests (scripts/test-project-rules.mjs)' -Detail $hDetail
 
+# ---------------------------------------------------------------- [i]
+$iOk = $true
+$iDetail = @()
+try {
+    $nodeOut = & node scripts/test-exit-code.mjs 2>&1
+    if ($LASTEXITCODE -ne 0) { $iOk = $false; $iDetail += ($nodeOut | Select-Object -Last 15) }
+} catch { $iOk = $false; $iDetail += "node scripts/test-exit-code.mjs 执行失败: $_" }
+Write-Item -Ok $iOk -Label '[i] exit-code tests (scripts/test-exit-code.mjs)' -Detail $iDetail
+
+# ---------------------------------------------------------------- [j]
+$jOk = $true
+$jDetail = @()
+try {
+    $nodeOut = & node scripts/test-stop-status.mjs 2>&1
+    if ($LASTEXITCODE -ne 0) { $jOk = $false; $jDetail += ($nodeOut | Select-Object -Last 15) }
+} catch { $jOk = $false; $jDetail += "node scripts/test-stop-status.mjs 执行失败: $_" }
+Write-Item -Ok $jOk -Label '[j] stop-status tests (scripts/test-stop-status.mjs)' -Detail $jDetail
+
 # ---------------------------------------------------------------- summary
 Write-Host ''
 if ($script:Failed -eq 0) {
