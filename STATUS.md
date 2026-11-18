@@ -2,6 +2,7 @@
 
 ## 当前
 
+- 2.0.7（已合并 main + tag v2.0.7 已推 GitHub，未发 npm）：加固四项 + 设置页重排。①退出码未知（哨兵 125）不再谎报成功；②running 运行免淘汰；③停止三态回执 + 终态保护；④权限解析失败 fail-closed 拒绝委派；⑤设置页 7 分区（后端四态、两级参数、观测分层、诊断自检、维护二次确认）；⑥修探测写 models、加 binaryOverride 与只读 `self-check`；`check.ps1` 10/10。
 - 2.0.6（已合并 main + tag v2.0.6 已推 GitHub，未发 npm）：dock UI 调整。dock 宽度改与输入卡（会话区列）一致并居中（用宿主 `--dsh-composer-side-clearance` / `--dsh-composer-card-max-width` 变量）；卡片由「单行+点击逐项展开」改为两行——上行固定状态列，下行「任务 / 进度 / 步骤」横向平铺、始终可见、缺值占位对齐；dock 默认展开；去掉逐项折叠与 activity 轮询（进度用 runs 快照 `lastEvent`、步骤用 `eventCount`）。
 - 2.0.5（已合并 main + tag v2.0.5 已推 GitHub，未发 npm）：P1 四个风险 + 一个治理项 + P2 命名/UI 收敛。
   ①权限透传：新增后端 `permissionMode`（默认由 `bypass_permissions` 改为 `inherit`），inherit 读父会话 `permissions.currentValue` 映射到 codex/claude/qoder/codebuddy 实际参数，读不到/未知→回退 `bypass_permissions`+警告一次，pi/opencode 忽略并警告，activity 记 `权限: <值>`。

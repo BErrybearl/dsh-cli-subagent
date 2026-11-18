@@ -3,6 +3,17 @@
 本分支 = `dsh-subagent` 的社区增强分支，2.0.2 起 npm 包名为 `dsh-cli-hub`。
 与上游的逐版差异按版本倒序列在下面。
 
+## 2.0.7（已合并 main + tag v2.0.7 并推 GitHub，未发 npm）
+
+- **加固四项（可信 / 安全）**
+  - 退出码未知不再谎报成功：`hidden-runner.ps1` 的 `Start-Process` 补 `-Wait`（此前 `ExitCode` 常为 null，旧代码回退成 0）；拿不到退出码返回哨兵 `125`（`hidden-runner.cjs` 同约定），上层一律按非 0 判失败。合成 CLI 实测 7→7 / 0→0 / 42→42。
+  - 活跃运行免淘汰：`retention.applyRetention` 先固定全部 `running`，再用最新非 running 填满 `maxRuns` 名额；running 的索引行与转录永不删除（此前第 25 条新记录可淘汰仍在跑的最旧项，之后既停不掉也找不到）。
+  - 停止回执三态：`stop` 路径取 `taskkill` 退出码并 3 秒有界等待进程树退出，返回 `stopping / stop_failed / stopped` 并带原因；面板如实显示「停止失败 / 正在停止」；终态回写由 `decideFinalStatus` 保护，已取消不会被改写为完成或出错。
+  - 权限 fail-closed：父会话权限投影缺失或预设未知时**拒绝该次委派并说明原因**（不再回退 `bypass_permissions`）；driver 无权限开关却要求 `read-only / workspace-write` 时拒绝并给出替代建议。
+- **设置页重排（7 分区）**：我的后端（默认展开；四态徽标：已启用·可用 / 已启用·需登录 / 已启用·路径失效 / 已停用 / 检测到未加入；停用与失效也可展开编辑）、添加后端（按钮打开；搜索为主、手动为次；候选明确标「登录与协议待验证」）、后端参数（两级：默认模型/强度只列该后端支持的档位，高级里才放并发 / CLI 路径 / 实际协议）、在哪显示（两个入口开关 + 折叠「显示细节」）、观测范围（折叠：内置 / 外部 + 关键词命中数 + 三态诊断）、状态与诊断（折叠：快照来源 / 刷新时间 / 取消数 + 自检）、维护（页尾折叠：恢复默认二次确认 + 批量启用先列影响清单）；两列改 `auto-fit minmax(260px, 1fr)`。
+- **探测反馈修正**：探测模型不再把目录写进 `models`（避免保存后压掉默认 `model`）；后端列表新增 `binaryOverride` 区分「自动检测」与「手动覆盖」；新增只读路由 `self-check`（返回构造出的委派命令行 + 跑 `<binary> --version` 取真实退出码与首条错误，8 秒超时）。
+- **测试**：新增 `scripts/test-exit-code.mjs`（6/6）、`scripts/test-stop-status.mjs`（16/16），扩充 `scripts/test-retention.mjs`（19/19）与 `scripts/test-permission-map.mjs`（32/32）；`scripts/check.ps1` **10/10**。
+- **已知未做**：「已启用·需登录」为占位（host 暂无登录探测接口）；`auto` 预设仍映射 `danger-full-access`（不带审批语义）；设置页窄屏与键盘可达性需真机验收。
 ## 2.0.6（已合并 main + tag v2.0.6 并推 GitHub，未发 npm）
 
 - **UI 调整（dock）**：dock 宽度改与输入卡（会话区那一列）一致——用宿主的 `--dsh-composer-side-clearance` / `--dsh-composer-card-max-width` 变量计算宽度并居中；dock 卡片由「单行 + 点击逐项展开」改为两行——上行固定状态列，下行把「任务 / 进度 / 步骤」横向平铺、始终可见；dock 默认展开。不再逐项折叠。
